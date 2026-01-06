@@ -1,3 +1,4 @@
+import { listClients } from "@/lib/gsmApi";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -7,20 +8,21 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
-import type { Client } from "@shared/schema";
 
 export default function Clients() {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: clients, isLoading } = useQuery<Client[]>({
-    queryKey: ["/api/clients"],
+  const { data: clients, isLoading, error } = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => listClients(200),
   });
 
   const filteredClients = clients?.filter((client) => {
     return searchQuery === "" ||
-      client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      client.phone.includes(searchQuery) ||
-      client.email.toLowerCase().includes(searchQuery.toLowerCase());
+      client.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (client.phone ?? "").includes(searchQuery) ||
+      (client.email ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+
   });
 
   return (
@@ -48,6 +50,11 @@ export default function Clients() {
           data-testid="input-search-clients"
         />
       </div>
+      {error && (
+        <div className="text-sm text-red-500">
+          Error cargando clientes: {(error as any).message}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -65,14 +72,14 @@ export default function Clients() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredClients.map((client) => (
             <Link key={client.id} href={`/clientes/${client.id}`}>
-              <Card 
+              <Card
                 className="hover-elevate cursor-pointer transition-shadow"
                 data-testid={`card-client-${client.id}`}
               >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate mb-3">{client.name}</h3>
+                      <h3 className="font-medium truncate mb-3">{client.full_name}</h3>
                       <div className="space-y-2 text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
                           <Phone className="h-4 w-4 shrink-0" />
