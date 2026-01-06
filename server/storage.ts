@@ -1,5 +1,5 @@
-import { 
-  type Client, 
+import {
+  type Client,
   type InsertClient,
   type Device,
   type InsertDevice,
@@ -8,8 +8,8 @@ import {
   type Payment,
   type InsertPayment,
   type RepairOrderWithDetails,
-  type User, 
-  type InsertUser 
+  type User,
+  type InsertUser
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -18,19 +18,19 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   // Clients
   getClients(): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
-  
+
   // Devices
   getDevices(): Promise<Device[]>;
   getDevicesByClient(clientId: string): Promise<Device[]>;
   getDevice(id: string): Promise<Device | undefined>;
   createDevice(device: InsertDevice): Promise<Device>;
-  
+
   // Orders
   getOrders(): Promise<RepairOrder[]>;
   getOrdersWithDetails(): Promise<RepairOrderWithDetails[]>;
@@ -38,13 +38,13 @@ export interface IStorage {
   getOrdersByClient(clientId: string): Promise<RepairOrderWithDetails[]>;
   createOrder(order: InsertRepairOrder): Promise<RepairOrder>;
   updateOrder(id: string, order: Partial<RepairOrder>): Promise<RepairOrder | undefined>;
-  
+
   // Payments
   getPayments(): Promise<Payment[]>;
   getPaymentsWithOrders(): Promise<(Payment & { order?: RepairOrderWithDetails })[]>;
   getPaymentsByOrder(orderId: string): Promise<Payment[]>;
   createPayment(payment: InsertPayment): Promise<Payment>;
-  
+
   // Stats
   getStats(): Promise<{
     activeOrders: number;
@@ -67,7 +67,7 @@ export class MemStorage implements IStorage {
     this.devices = new Map();
     this.orders = new Map();
     this.payments = new Map();
-    
+
     // Add sample data
     this.seedData();
   }
@@ -77,25 +77,31 @@ export class MemStorage implements IStorage {
     const client1: Client = {
       id: "client-1",
       name: "María García",
+      dni: "12345678",
       phone: "+54 11 5555-1234",
       email: "maria.garcia@email.com",
       address: "Av. Corrientes 1234, CABA",
+      whoPicksUp: "",
       notes: "Cliente frecuente",
     };
     const client2: Client = {
       id: "client-2",
       name: "Juan Pérez",
+      dni: "87654321",
       phone: "+54 11 5555-5678",
       email: "juan.perez@email.com",
       address: "Calle Florida 567, CABA",
+      whoPicksUp: "",
       notes: "",
     };
     const client3: Client = {
       id: "client-3",
       name: "Ana López",
+      dni: "11223344",
       phone: "+54 11 5555-9012",
       email: "",
       address: "",
+      whoPicksUp: "Esposo",
       notes: "Prefiere contacto por WhatsApp",
     };
     this.clients.set(client1.id, client1);
@@ -112,6 +118,8 @@ export class MemStorage implements IStorage {
       serialNumber: "R5CR30ABCDE",
       color: "Negro",
       condition: "Bueno",
+      lockType: "PIN",
+      lockValue: "1234",
     };
     const device2: Device = {
       id: "device-2",
@@ -122,6 +130,8 @@ export class MemStorage implements IStorage {
       serialNumber: "F17YJABCDEF",
       color: "Blanco",
       condition: "Excelente",
+      lockType: "PASSWORD",
+      lockValue: "",
     };
     const device3: Device = {
       id: "device-3",
@@ -132,6 +142,8 @@ export class MemStorage implements IStorage {
       serialNumber: "XM123456789",
       color: "Azul",
       condition: "Regular",
+      lockType: "",
+      lockValue: "",
     };
     const device4: Device = {
       id: "device-4",
@@ -142,6 +154,8 @@ export class MemStorage implements IStorage {
       serialNumber: "ZY3245ABCD",
       color: "Verde",
       condition: "Bueno",
+      lockType: "",
+      lockValue: "",
     };
     this.devices.set(device1.id, device1);
     this.devices.set(device2.id, device2);
@@ -277,7 +291,11 @@ export class MemStorage implements IStorage {
 
   async createClient(insertClient: InsertClient): Promise<Client> {
     const id = randomUUID();
-    const client: Client = { ...insertClient, id };
+    const client: Client = {
+      ...insertClient,
+      id,
+      whoPicksUp: insertClient.whoPicksUp || ""
+    };
     this.clients.set(id, client);
     return client;
   }
@@ -305,7 +323,12 @@ export class MemStorage implements IStorage {
 
   async createDevice(insertDevice: InsertDevice): Promise<Device> {
     const id = randomUUID();
-    const device: Device = { ...insertDevice, id };
+    const device: Device = {
+      ...insertDevice,
+      id,
+      lockType: insertDevice.lockType || "",
+      lockValue: insertDevice.lockValue || "",
+    };
     this.devices.set(id, device);
     return device;
   }
@@ -363,19 +386,19 @@ export class MemStorage implements IStorage {
   async updateOrder(id: string, updates: Partial<RepairOrder>): Promise<RepairOrder | undefined> {
     const order = this.orders.get(id);
     if (!order) return undefined;
-    
+
     const updated = { ...order, ...updates };
-    
+
     // Auto-set completedAt when status changes to listo
     if (updates.status === "listo" && !order.completedAt) {
       updated.completedAt = new Date().toISOString();
     }
-    
+
     // Auto-set deliveredAt when status changes to entregado
     if (updates.status === "entregado" && !order.deliveredAt) {
       updated.deliveredAt = new Date().toISOString();
     }
-    
+
     this.orders.set(id, updated);
     return updated;
   }
@@ -421,23 +444,23 @@ export class MemStorage implements IStorage {
   }> {
     const orders = Array.from(this.orders.values());
     const payments = Array.from(this.payments.values());
-    
+
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    
-    const activeOrders = orders.filter(o => 
+
+    const activeOrders = orders.filter(o =>
       o.status !== "entregado"
     ).length;
-    
-    const pendingDiagnosis = orders.filter(o => 
+
+    const pendingDiagnosis = orders.filter(o =>
       o.status === "recibido" || o.status === "diagnostico"
     ).length;
-    
-    const readyForPickup = orders.filter(o => 
+
+    const readyForPickup = orders.filter(o =>
       o.status === "listo"
     ).length;
-    
+
     // Calculate monthly revenue from payments within current month only
     const monthlyRevenue = payments
       .filter(p => {
@@ -445,7 +468,7 @@ export class MemStorage implements IStorage {
         return paymentDate >= monthStart && paymentDate <= monthEnd;
       })
       .reduce((sum, p) => sum + p.amount, 0);
-    
+
     return {
       activeOrders,
       pendingDiagnosis,

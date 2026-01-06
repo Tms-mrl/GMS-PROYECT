@@ -12,23 +12,29 @@ export type PaymentMethod = typeof paymentMethods[number];
 export interface Client {
   id: string;
   name: string;
+  dni: string;
+  address: string;
   phone: string;
   email: string;
-  address: string;
+  whoPicksUp: string;
   notes: string;
 }
 
 export const insertClientSchema = z.object({
   name: z.string().min(1, "El nombre es requerido"),
+  dni: z.string().min(1, "El DNI/Documento es requerido"),
+  address: z.string().min(1, "La dirección es requerida"),
   phone: z.string().min(1, "El teléfono es requerido"),
   email: z.string().email("Email inválido").or(z.literal("")),
-  address: z.string(),
+  whoPicksUp: z.string().optional(),
   notes: z.string(),
 });
 
 export type InsertClient = z.infer<typeof insertClientSchema>;
 
 // Device schema
+export type LockType = "PIN" | "PATRON" | "PASSWORD" | "";
+
 export interface Device {
   id: string;
   clientId: string;
@@ -38,6 +44,8 @@ export interface Device {
   serialNumber: string;
   color: string;
   condition: string;
+  lockType: LockType;
+  lockValue: string;
 }
 
 export const insertDeviceSchema = z.object({
@@ -48,6 +56,8 @@ export const insertDeviceSchema = z.object({
   serialNumber: z.string(),
   color: z.string(),
   condition: z.string(),
+  lockType: z.enum(["PIN", "PATRON", "PASSWORD"]).or(z.literal("")).optional(),
+  lockValue: z.string().optional(),
 });
 
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;

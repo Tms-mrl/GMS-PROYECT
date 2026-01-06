@@ -16,6 +16,7 @@ import NewClient from "@/pages/new-client";
 import ClientDetail from "@/pages/client-detail";
 import Payments from "@/pages/payments";
 import Reports from "@/pages/reports";
+import PrintOrder from "@/pages/print-order";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/ordenes" component={Orders} />
       <Route path="/ordenes/nueva" component={NewOrder} />
+      <Route path="/ordenes/:id/print" component={PrintOrder} />
       <Route path="/ordenes/:id" component={OrderDetail} />
       <Route path="/clientes" component={Clients} />
       <Route path="/clientes/nuevo" component={NewClient} />

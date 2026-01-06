@@ -28,9 +28,11 @@ export default function NewClient() {
     resolver: zodResolver(insertClientSchema),
     defaultValues: {
       name: "",
+      dni: "",
+      address: "",
       phone: "",
       email: "",
-      address: "",
+      whoPicksUp: "",
       notes: "",
     },
   });
@@ -83,10 +85,46 @@ export default function NewClient() {
                     <FormItem>
                       <FormLabel>Nombre Completo *</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
+                        <Input
+                          {...field}
                           placeholder="Juan Pérez"
                           data-testid="input-client-name"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="dni"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>DNI / Documento *</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="12.345.678"
+                          data-testid="input-client-dni"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="address"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Dirección *</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="Av. Ejemplo 123, Ciudad"
+                          data-testid="input-client-address"
                         />
                       </FormControl>
                       <FormMessage />
@@ -101,8 +139,8 @@ export default function NewClient() {
                     <FormItem>
                       <FormLabel>Teléfono *</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
+                        <Input
+                          {...field}
                           placeholder="+54 11 1234-5678"
                           data-testid="input-client-phone"
                         />
@@ -111,9 +149,7 @@ export default function NewClient() {
                     </FormItem>
                   )}
                 />
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="email"
@@ -121,8 +157,8 @@ export default function NewClient() {
                     <FormItem>
                       <FormLabel>Email</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
+                        <Input
+                          {...field}
                           type="email"
                           placeholder="cliente@email.com"
                           data-testid="input-client-email"
@@ -135,15 +171,15 @@ export default function NewClient() {
 
                 <FormField
                   control={form.control}
-                  name="address"
+                  name="whoPicksUp"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Dirección</FormLabel>
+                      <FormLabel>Quien retira equipo</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
-                          placeholder="Av. Ejemplo 123, Ciudad"
-                          data-testid="input-client-address"
+                        <Input
+                          {...field}
+                          placeholder="Nombre de autorizado (opcional)"
+                          data-testid="input-client-who-picks-up"
                         />
                       </FormControl>
                       <FormMessage />
@@ -159,8 +195,8 @@ export default function NewClient() {
                   <FormItem>
                     <FormLabel>Notas</FormLabel>
                     <FormControl>
-                      <Textarea 
-                        {...field} 
+                      <Textarea
+                        {...field}
                         placeholder="Información adicional sobre el cliente..."
                         data-testid="input-client-notes"
                       />

@@ -50,6 +50,17 @@ export function OrderCard({ order }: OrderCardProps) {
             </div>
           )}
           
+          {order.device.lockType && (
+            <div className="text-sm">
+              <span className="text-muted-foreground">Bloqueo: </span>
+              <span>
+                {order.device.lockType === "PIN" && "PIN"}
+                {order.device.lockType === "PATRON" && "Patrón"}
+                {order.device.lockType === "PASSWORD" && "Contraseña"}
+              </span>
+            </div>
+          )}
+          
           <p className="text-sm line-clamp-2">{order.problem}</p>
           
           <div className="flex items-center justify-between pt-2 border-t text-xs text-muted-foreground">

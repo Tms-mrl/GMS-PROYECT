@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import multer from "multer";
+import nodemailer from "nodemailer";
 import { storage } from "./storage";
 import { 
   insertClientSchema, 
@@ -7,6 +9,18 @@ import {
   insertRepairOrderSchema,
   insertPaymentSchema 
 } from "@shared/schema";
+
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB por archivo
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten archivos de imagen'));
+    }
+  },
+});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -205,6 +219,94 @@ export async function registerRoutes(
       res.status(201).json(payment);
     } catch (error) {
       res.status(500).json({ error: "Error creating payment" });
+    }
+  });
+
+  // Support endpoint
+  app.post("/api/support", (req, res, next) => {
+    upload.array("images", 5)(req, res, (err) => {
+      if (err) {
+        if (err instanceof multer.MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(400).json({ error: "El archivo es demasiado grande. Máximo 10MB por archivo" });
+          }
+          if (err.code === "LIMIT_FILE_COUNT") {
+            return res.status(400).json({ error: "Demasiados archivos. Máximo 5 imágenes" });
+          }
+        }
+        return res.status(400).json({ error: err.message || "Error al procesar archivos" });
+      }
+      next();
+    });
+  }, async (req, res) => {
+    try {
+      const message = req.body.message;
+      
+      if (!message || message.trim().length < 10) {
+        return res.status(400).json({ error: "El mensaje debe tener al menos 10 caracteres" });
+      }
+
+      // Configurar transporter de nodemailer
+      // Nota: En producción, deberías usar variables de entorno para estas credenciales
+      const supportEmail = process.env.SUPPORT_EMAIL || "gmsproyect@gmail.com";
+      const supportPassword = process.env.SUPPORT_EMAIL_PASSWORD || "";
+      
+      if (!supportPassword) {
+        console.warn("SUPPORT_EMAIL_PASSWORD no está configurado. El envío de correos puede fallar.");
+      }
+
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: supportEmail,
+          pass: supportPassword,
+        },
+      });
+
+      // Preparar adjuntos si hay imágenes
+      const files = req.files as Express.Multer.File[] || [];
+      const attachments = files.map((file, index) => ({
+        filename: file.originalname || `imagen-${index + 1}.jpg`,
+        content: file.buffer,
+        cid: `image-${index}`,
+      }));
+
+      // Crear el HTML del mensaje con imágenes incrustadas si las hay
+      let htmlContent = `<p>${message.replace(/\n/g, '<br>')}</p>`;
+      
+      if (attachments.length > 0) {
+        htmlContent += '<hr><h3>Imágenes adjuntas:</h3>';
+        attachments.forEach((att, index) => {
+          htmlContent += `<p><img src="cid:image-${index}" style="max-width: 500px; margin: 10px 0;" /></p>`;
+        });
+      }
+
+      // Enviar correo
+      const mailOptions = {
+        from: supportEmail,
+        to: "gmsproyect@gmail.com",
+        subject: "Solicitud de Soporte - RepairShop",
+        html: htmlContent,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      };
+
+      await transporter.sendMail(mailOptions);
+
+      res.json({ success: true, message: "Mensaje enviado correctamente" });
+    } catch (error: any) {
+      console.error("Error sending support email:", error);
+      
+      // Manejar errores específicos de nodemailer
+      if (error.code === "EAUTH") {
+        return res.status(500).json({ 
+          error: "Error de autenticación del correo. Verifica las credenciales configuradas." 
+        });
+      }
+      
+      res.status(500).json({ 
+        error: "Error al enviar el mensaje", 
+        details: error.message 
+      });
     }
   });
 

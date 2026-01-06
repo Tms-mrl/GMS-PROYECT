@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useRoute, useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { 
-  ArrowLeft, 
-  Smartphone, 
-  User, 
-  Calendar, 
+import {
+  ArrowLeft,
+  Smartphone,
+  User,
+  Calendar,
   DollarSign,
   Save,
   Printer,
@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StatusBadge } from "@/components/status-badge";
+import { PatternLock } from "@/components/ui/pattern-lock";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
@@ -127,12 +128,14 @@ export default function OrderDetail() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
-            <Printer className="h-4 w-4 mr-2" />
-            Imprimir
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/ordenes/${orderId}/print`}>
+              <Printer className="h-4 w-4 mr-2" />
+              Imprimir
+            </Link>
           </Button>
-          <Button 
-            size="sm" 
+          <Button
+            size="sm"
             onClick={handleSave}
             disabled={updateOrder.isPending || Object.keys(formData).length === 0}
             data-testid="button-save-order"
@@ -339,6 +342,39 @@ export default function OrderDetail() {
                 <div>
                   <p className="text-sm text-muted-foreground">Condición</p>
                   <p>{order.device.condition}</p>
+                </div>
+              )}
+              {order.device.lockType && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Tipo de Bloqueo</p>
+                  <div className="font-medium">
+                    {order.device.lockType === "PIN" && (
+                      <div className="flex flex-col">
+                        <span>PIN</span>
+                        <span className="text-lg mt-1">PIN: {order.device.lockValue || "No definido"}</span>
+                      </div>
+                    )}
+                    {order.device.lockType === "PASSWORD" && (
+                      <div className="flex flex-col">
+                        <span>Contraseña</span>
+                        <span className="text-base mt-1 break-all">Contraseña: {order.device.lockValue || "No definida"}</span>
+                      </div>
+                    )}
+                    {order.device.lockType === "PATRON" && "Patrón"}
+                  </div>
+                </div>
+              )}
+              {order.device.lockType === "PATRON" && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Patrón de Desbloqueo</p>
+                  {order.device.lockValue ? (
+                    <PatternLock
+                      value={order.device.lockValue}
+                      readOnly={true}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">No pattern saved</p>
+                  )}
                 </div>
               )}
             </CardContent>
