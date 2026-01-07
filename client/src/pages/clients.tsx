@@ -19,7 +19,7 @@ export default function Clients() {
 
   const filteredClients = clients?.filter((client) => {
     return searchQuery === "" ||
-      client.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (client.phone ?? "").includes(searchQuery) ||
       (client.email ?? "").toLowerCase().includes(searchQuery.toLowerCase())
 
@@ -79,7 +79,7 @@ export default function Clients() {
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate mb-3">{client.full_name}</h3>
+                      <h3 className="font-medium truncate mb-3">{client.name}</h3>
                       <div className="space-y-2 text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
                           <Phone className="h-4 w-4 shrink-0" />

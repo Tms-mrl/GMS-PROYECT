@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -7,7 +7,9 @@ import { z } from "zod";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Client, Device, LockType } from "@shared/schema";
@@ -21,6 +23,7 @@ export default function NewOrder() {
   const { toast } = useToast();
   const [showNewDevice, setShowNewDevice] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState("");
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
 
   const { data: clients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
@@ -42,6 +45,7 @@ export default function NewOrder() {
       priority: "normal" as const,
       technicianName: "",
       notes: "",
+      intakeChecklist: {},
     },
   });
 
@@ -59,6 +63,12 @@ export default function NewOrder() {
     },
   });
 
+  // Watch for client/device changes to reset checklist
+  useEffect(() => {
+    form.resetField("intakeChecklist");
+  }, [selectedClientId, selectedDeviceId, form]);
+
+
   const createDevice = useMutation({
     mutationFn: async (data: z.infer<typeof newDeviceSchema>) => {
       const res = await apiRequest("POST", "/api/devices", {
@@ -70,6 +80,7 @@ export default function NewOrder() {
     onSuccess: (newDevice: Device) => {
       queryClient.invalidateQueries({ queryKey: ["/api/devices", selectedClientId] });
       form.setValue("deviceId", newDevice.id);
+      setSelectedDeviceId(newDevice.id);
       setShowNewDevice(false);
       deviceForm.reset({
         brand: "",
@@ -108,10 +119,6 @@ export default function NewOrder() {
   });
 
   const onSubmit = form.handleSubmit((data) => {
-    // data comes largely as strings (from standard inputs) but validation rules might have transformed it?
-    // Actually zodResolver transforms "estimatedCost" string -> number.
-    // So 'data' passed here IS transformed.
-    // We just need to signal TS that it is safe to use as the mutation input.
     createOrder.mutate(data as unknown as z.infer<typeof orderFormSchema>);
   });
 
@@ -138,6 +145,7 @@ export default function NewOrder() {
               onClientSelect={(clientId) => {
                 setSelectedClientId(clientId);
                 form.setValue("deviceId", "");
+                setSelectedDeviceId("");
               }}
             />
 
@@ -155,6 +163,56 @@ export default function NewOrder() {
 
           <OrderDetails form={form} />
 
+          {/* Intake Checklist Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Checklist de Recepción</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[
+                  { name: "charges", label: "¿Carga?" },
+                  { name: "powersOn", label: "¿Enciende?" },
+                  { name: "dropped", label: "¿Golpeado?" },
+                  { name: "wet", label: "¿Mojado?" },
+                  { name: "openedBefore", label: "¿Abierto previamente?" },
+                  { name: "inWarranty", label: "¿En garantía?" },
+                ].map((item) => (
+                  <FormField
+                    key={item.name}
+                    control={form.control}
+                    name={`intakeChecklist.${item.name}` as any}
+                    render={({ field }) => (
+                      <FormItem className="space-y-3">
+                        <FormLabel>{item.label}</FormLabel>
+                        <FormControl>
+                          <RadioGroup
+                            onValueChange={field.onChange}
+                            defaultValue={field.value}
+                            className="flex flex-col space-y-1"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="yes" id={`${item.name}-yes`} />
+                              <label htmlFor={`${item.name}-yes`} className="font-normal cursor-pointer">Sí</label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="no" id={`${item.name}-no`} />
+                              <label htmlFor={`${item.name}-no`} className="font-normal cursor-pointer">No</label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="unknown" id={`${item.name}-unknown`} />
+                              <label htmlFor={`${item.name}-unknown`} className="font-normal cursor-pointer">Desconocido</label>
+                            </div>
+                          </RadioGroup>
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex justify-end gap-4">
             <Button variant="outline" asChild>
               <Link href="/ordenes">Cancelar</Link>
@@ -168,3 +226,4 @@ export default function NewOrder() {
     </div>
   );
 }
+

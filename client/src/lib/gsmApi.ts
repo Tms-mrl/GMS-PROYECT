@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient";
 
 export type NewClient = {
-    full_name: string;
+    name: string;
     phone?: string | null;
     email?: string | null;
 };
@@ -64,7 +64,7 @@ export async function listRepairOrders(limit = 10) {
         .select(
             `
       id, created_at, status, problem, price_estimate, final_price,
-      clients ( id, full_name, phone, email ),
+      clients ( id, name, phone, email ),
       devices ( id, brand, model, imei )
     `
         )
@@ -79,7 +79,7 @@ export async function listRepairOrders(limit = 10) {
 export async function listClients(limit = 50) {
   const { data, error } = await supabase
     .from("clients")
-    .select("id, full_name, phone, email, created_at")
+    .select("id, name, phone, email, created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -90,7 +90,7 @@ export async function listClients(limit = 50) {
 export async function getClientById(id: string) {
   const { data, error } = await supabase
     .from("clients")
-    .select("id, full_name, phone, email, created_at")
+    .select("id, name, phone, email, created_at")
     .eq("id", id)
     .single();
 
@@ -105,7 +105,7 @@ export async function getRepairOrderById(id: string) {
     .select(
       `
       id, created_at, status, problem, diagnosis, price_estimate, final_price,
-      clients ( id, full_name, phone, email ),
+      clients ( id, name, phone, email ),
       devices ( id, brand, model, imei )
     `
     )

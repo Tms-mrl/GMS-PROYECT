@@ -3,14 +3,14 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import nodemailer from "nodemailer";
 import { storage } from "./storage";
-import { 
-  insertClientSchema, 
-  insertDeviceSchema, 
+import {
+  insertClientSchema,
+  insertDeviceSchema,
   insertRepairOrderSchema,
-  insertPaymentSchema 
+  insertPaymentSchema
 } from "@shared/schema";
 
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB por archivo
   fileFilter: (_req, file, cb) => {
@@ -26,7 +26,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
   // Stats
   app.get("/api/stats", async (req, res) => {
     try {
@@ -70,6 +70,8 @@ export async function registerRoutes(
 
   app.post("/api/clients", async (req, res) => {
     try {
+      console.log("POST /api/clients using:", storage.constructor.name);
+
       const parsed = insertClientSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors });
@@ -178,8 +180,8 @@ export async function registerRoutes(
     try {
       // Only allow specific fields to be updated
       const allowedFields = [
-        "status", "problem", "diagnosis", "solution", 
-        "technicianName", "estimatedCost", "finalCost", 
+        "status", "problem", "diagnosis", "solution",
+        "technicianName", "estimatedCost", "finalCost",
         "estimatedDate", "priority", "notes"
       ];
       const updates: Record<string, unknown> = {};
@@ -188,7 +190,7 @@ export async function registerRoutes(
           updates[field] = req.body[field];
         }
       }
-      
+
       const order = await storage.updateOrder(req.params.id, updates);
       if (!order) {
         return res.status(404).json({ error: "Order not found" });
@@ -241,7 +243,7 @@ export async function registerRoutes(
   }, async (req, res) => {
     try {
       const message = req.body.message;
-      
+
       if (!message || message.trim().length < 10) {
         return res.status(400).json({ error: "El mensaje debe tener al menos 10 caracteres" });
       }
@@ -250,7 +252,7 @@ export async function registerRoutes(
       // Nota: En producción, deberías usar variables de entorno para estas credenciales
       const supportEmail = process.env.SUPPORT_EMAIL || "gmsproyect@gmail.com";
       const supportPassword = process.env.SUPPORT_EMAIL_PASSWORD || "";
-      
+
       if (!supportPassword) {
         console.warn("SUPPORT_EMAIL_PASSWORD no está configurado. El envío de correos puede fallar.");
       }
@@ -273,7 +275,7 @@ export async function registerRoutes(
 
       // Crear el HTML del mensaje con imágenes incrustadas si las hay
       let htmlContent = `<p>${message.replace(/\n/g, '<br>')}</p>`;
-      
+
       if (attachments.length > 0) {
         htmlContent += '<hr><h3>Imágenes adjuntas:</h3>';
         attachments.forEach((att, index) => {
@@ -295,17 +297,17 @@ export async function registerRoutes(
       res.json({ success: true, message: "Mensaje enviado correctamente" });
     } catch (error: any) {
       console.error("Error sending support email:", error);
-      
+
       // Manejar errores específicos de nodemailer
       if (error.code === "EAUTH") {
-        return res.status(500).json({ 
-          error: "Error de autenticación del correo. Verifica las credenciales configuradas." 
+        return res.status(500).json({
+          error: "Error de autenticación del correo. Verifica las credenciales configuradas."
         });
       }
-      
-      res.status(500).json({ 
-        error: "Error al enviar el mensaje", 
-        details: error.message 
+
+      res.status(500).json({
+        error: "Error al enviar el mensaje",
+        details: error.message
       });
     }
   });

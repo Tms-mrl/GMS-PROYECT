@@ -62,6 +62,29 @@ export const insertDeviceSchema = z.object({
 
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 
+
+// Intake Checklist schema
+export const checklistValue = z.enum(["yes", "no", "unknown"]);
+export type ChecklistValue = z.infer<typeof checklistValue>;
+
+export interface IntakeChecklist {
+  charges?: ChecklistValue;
+  powersOn?: ChecklistValue;
+  dropped?: ChecklistValue;
+  wet?: ChecklistValue;
+  openedBefore?: ChecklistValue;
+  inWarranty?: ChecklistValue;
+}
+
+export const intakeChecklistSchema = z.object({
+  charges: checklistValue.optional(),
+  powersOn: checklistValue.optional(),
+  dropped: checklistValue.optional(),
+  wet: checklistValue.optional(),
+  openedBefore: checklistValue.optional(),
+  inWarranty: checklistValue.optional(),
+});
+
 // Repair Order schema
 export interface RepairOrder {
   id: string;
@@ -80,6 +103,7 @@ export interface RepairOrder {
   deliveredAt: string | null;
   priority: "normal" | "urgente";
   notes: string;
+  intakeChecklist: IntakeChecklist;
 }
 
 export const insertRepairOrderSchema = z.object({
@@ -95,6 +119,7 @@ export const insertRepairOrderSchema = z.object({
   estimatedDate: z.string(),
   priority: z.enum(["normal", "urgente"]).default("normal"),
   notes: z.string(),
+  intakeChecklist: intakeChecklistSchema.default({}),
 });
 
 export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
@@ -138,3 +163,4 @@ export const insertUserSchema = z.object({
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
+

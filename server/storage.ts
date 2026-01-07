@@ -9,9 +9,11 @@ import {
   type InsertPayment,
   type RepairOrderWithDetails,
   type User,
-  type InsertUser
+  type InsertUser,
+  type IntakeChecklist
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export interface IStorage {
   // Users
@@ -181,6 +183,7 @@ export class MemStorage implements IStorage {
       deliveredAt: null,
       priority: "normal",
       notes: "Cliente solicita presupuesto antes de proceder",
+      intakeChecklist: {},
     };
     const order2: RepairOrder = {
       id: "order-2",
@@ -199,6 +202,7 @@ export class MemStorage implements IStorage {
       deliveredAt: null,
       priority: "urgente",
       notes: "",
+      intakeChecklist: {},
     };
     const order3: RepairOrder = {
       id: "order-3",
@@ -217,6 +221,7 @@ export class MemStorage implements IStorage {
       deliveredAt: null,
       priority: "normal",
       notes: "Listo para entregar, avisar al cliente",
+      intakeChecklist: { charges: "yes", powersOn: "unknown" },
     };
     const order4: RepairOrder = {
       id: "order-4",
@@ -235,6 +240,7 @@ export class MemStorage implements IStorage {
       deliveredAt: null,
       priority: "normal",
       notes: "",
+      intakeChecklist: {},
     };
     this.orders.set(order1.id, order1);
     this.orders.set(order2.id, order2);
@@ -378,6 +384,7 @@ export class MemStorage implements IStorage {
       createdAt: new Date().toISOString(),
       completedAt: null,
       deliveredAt: null,
+      intakeChecklist: insertOrder.intakeChecklist || {},
     };
     this.orders.set(id, order);
     return order;
@@ -478,4 +485,343 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class SupabaseStorage implements IStorage {
+  private client: SupabaseClient;
+
+  constructor(url: string, key: string) {
+    this.client = createClient(url, key);
+  }
+
+  // Helpers to map snake_case DB to camelCase keys
+  private mapUser(row: any): User {
+    return {
+      id: row.id,
+      username: row.username,
+      password: row.password,
+    };
+  }
+
+  private mapClient(row: any): Client {
+    return {
+      id: row.id,
+      name: row.name,
+      dni: row.dni,
+      address: row.address,
+      phone: row.phone,
+      email: row.email,
+      whoPicksUp: row.who_picks_up,
+      notes: row.notes,
+    };
+  }
+
+  private mapDevice(row: any): Device {
+    return {
+      id: row.id,
+      clientId: row.client_id,
+      brand: row.brand,
+      model: row.model,
+      imei: row.imei,
+      serialNumber: row.serial_number,
+      color: row.color,
+      condition: row.condition,
+      lockType: row.lock_type,
+      lockValue: row.lock_value,
+    };
+  }
+
+  private mapOrder(row: any): RepairOrder {
+    return {
+      id: row.id,
+      clientId: row.client_id,
+      deviceId: row.device_id,
+      status: row.status,
+      problem: row.problem,
+      diagnosis: row.diagnosis,
+      solution: row.solution,
+      technicianName: row.technician_name,
+      estimatedCost: Number(row.estimated_cost),
+      finalCost: Number(row.final_cost),
+      createdAt: row.created_at,
+      estimatedDate: row.estimated_date,
+      completedAt: row.completed_at,
+      deliveredAt: row.delivered_at,
+      priority: row.priority,
+      notes: row.notes,
+      intakeChecklist: row.intake_checklist || {},
+    };
+  }
+
+  private mapPayment(row: any): Payment {
+    return {
+      id: row.id,
+      orderId: row.order_id,
+      amount: Number(row.amount),
+      method: row.method,
+      date: row.date,
+      notes: row.notes,
+    };
+  }
+
+  // Users
+  async getUser(id: string): Promise<User | undefined> {
+    const { data, error } = await this.client.from("users").select("*").eq("id", id).single();
+    if (error || !data) return undefined;
+    return this.mapUser(data);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const { data, error } = await this.client.from("users").select("*").eq("username", username).single();
+    if (error || !data) return undefined;
+    return this.mapUser(data);
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const { data, error } = await this.client.from("users").insert(user).select().single();
+    if (error) throw error;
+    return this.mapUser(data);
+  }
+
+  // Clients
+  async getClients(): Promise<Client[]> {
+    const { data, error } = await this.client.from("clients").select("*");
+    if (error) throw error;
+    return data.map(this.mapClient);
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    const { data, error } = await this.client.from("clients").select("*").eq("id", id).single();
+    if (error) return undefined;
+    return this.mapClient(data);
+  }
+
+  async createClient(client: InsertClient): Promise<Client> {
+    const dbClient = {
+      name: client.name,
+      dni: client.dni,
+      address: client.address,
+      phone: client.phone,
+      email: client.email,
+      who_picks_up: client.whoPicksUp,
+      notes: client.notes,
+    };
+    const { data, error } = await this.client.from("clients").insert(dbClient).select().single();
+    if (error) throw error;
+    return this.mapClient(data);
+  }
+
+  async updateClient(id: string, updates: Partial<InsertClient>): Promise<Client | undefined> {
+    const dbUpdates: any = {};
+    if (updates.name) dbUpdates.name = updates.name;
+    if (updates.dni) dbUpdates.dni = updates.dni;
+    if (updates.address) dbUpdates.address = updates.address;
+    if (updates.phone) dbUpdates.phone = updates.phone;
+    if (updates.email !== undefined) dbUpdates.email = updates.email;
+    if (updates.whoPicksUp !== undefined) dbUpdates.who_picks_up = updates.whoPicksUp;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+
+    const { data, error } = await this.client.from("clients").update(dbUpdates).eq("id", id).select().single();
+    if (error) return undefined;
+    if (!data) return undefined; // Should satisfy the undefined return type
+    return this.mapClient(data);
+  }
+
+  // Devices
+  async getDevices(): Promise<Device[]> {
+    const { data, error } = await this.client.from("devices").select("*");
+    if (error) throw error;
+    return data.map(this.mapDevice);
+  }
+
+  async getDevicesByClient(clientId: string): Promise<Device[]> {
+    const { data, error } = await this.client.from("devices").select("*").eq("client_id", clientId);
+    if (error) throw error;
+    return data.map(this.mapDevice);
+  }
+
+  async getDevice(id: string): Promise<Device | undefined> {
+    const { data, error } = await this.client.from("devices").select("*").eq("id", id).single();
+    if (error) return undefined;
+    return this.mapDevice(data);
+  }
+
+  async createDevice(device: InsertDevice): Promise<Device> {
+    const dbDevice = {
+      client_id: device.clientId,
+      brand: device.brand,
+      model: device.model,
+      imei: device.imei,
+      serial_number: device.serialNumber,
+      color: device.color,
+      condition: device.condition,
+      lock_type: device.lockType,
+      lock_value: device.lockValue,
+    };
+    const { data, error } = await this.client.from("devices").insert(dbDevice).select().single();
+    if (error) throw error;
+    return this.mapDevice(data);
+  }
+
+  // Orders
+  async getOrders(): Promise<RepairOrder[]> {
+    const { data, error } = await this.client.from("repair_orders").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data.map(this.mapOrder);
+  }
+
+  async getOrdersWithDetails(): Promise<RepairOrderWithDetails[]> {
+    const orders = await this.getOrders();
+    return Promise.all(orders.map(order => this.enrichOrder(order)));
+  }
+
+  async getOrderWithDetails(id: string): Promise<RepairOrderWithDetails | undefined> {
+    const { data, error } = await this.client.from("repair_orders").select("*").eq("id", id).single();
+    if (error || !data) return undefined;
+    const order = this.mapOrder(data);
+    return this.enrichOrder(order);
+  }
+
+  async getOrdersByClient(clientId: string): Promise<RepairOrderWithDetails[]> {
+    const { data, error } = await this.client.from("repair_orders").select("*").eq("client_id", clientId).order("created_at", { ascending: false });
+    if (error) throw error;
+    const orders = data.map(this.mapOrder);
+    return Promise.all(orders.map(order => this.enrichOrder(order)));
+  }
+
+  private async enrichOrder(order: RepairOrder): Promise<RepairOrderWithDetails> {
+    const client = await this.getClient(order.clientId);
+    const device = await this.getDevice(order.deviceId);
+    const payments = await this.getPaymentsByOrder(order.id);
+    return {
+      ...order,
+      client: client!,
+      device: device!,
+      payments,
+    };
+  }
+
+  async createOrder(order: InsertRepairOrder): Promise<RepairOrder> {
+    const dbOrder = {
+      client_id: order.clientId,
+      device_id: order.deviceId,
+      status: order.status,
+      problem: order.problem,
+      diagnosis: order.diagnosis,
+      solution: order.solution,
+      technician_name: order.technicianName,
+      estimated_cost: order.estimatedCost,
+      final_cost: order.finalCost,
+      estimated_date: order.estimatedDate,
+      priority: order.priority,
+      notes: order.notes,
+      intake_checklist: order.intakeChecklist,
+    };
+    const { data, error } = await this.client.from("repair_orders").insert(dbOrder).select().single();
+    if (error) throw error;
+    return this.mapOrder(data);
+  }
+
+  async updateOrder(id: string, updates: Partial<RepairOrder>): Promise<RepairOrder | undefined> {
+    const dbUpdates: any = {};
+    if (updates.status) dbUpdates.status = updates.status;
+    if (updates.problem) dbUpdates.problem = updates.problem;
+    if (updates.diagnosis) dbUpdates.diagnosis = updates.diagnosis;
+    if (updates.solution) dbUpdates.solution = updates.solution;
+    if (updates.technicianName) dbUpdates.technician_name = updates.technicianName;
+    if (updates.estimatedCost !== undefined) dbUpdates.estimated_cost = updates.estimatedCost;
+    if (updates.finalCost !== undefined) dbUpdates.final_cost = updates.finalCost;
+    if (updates.estimatedDate) dbUpdates.estimated_date = updates.estimatedDate;
+    if (updates.priority) dbUpdates.priority = updates.priority;
+    if (updates.notes) dbUpdates.notes = updates.notes;
+    // Handle status changes for automatic timestamps
+    if (updates.status === "listo") {
+      dbUpdates.completed_at = new Date().toISOString();
+    }
+    if (updates.status === "entregado") {
+      dbUpdates.delivered_at = new Date().toISOString();
+    }
+
+    // Also support checklist updates if needed, though mostly read-only after creation
+    if (updates.intakeChecklist) dbUpdates.intake_checklist = updates.intakeChecklist;
+
+    const { data, error } = await this.client.from("repair_orders").update(dbUpdates).eq("id", id).select().single();
+    if (error || !data) return undefined;
+    return this.mapOrder(data);
+  }
+
+  // Payments
+  async getPayments(): Promise<Payment[]> {
+    const { data, error } = await this.client.from("payments").select("*").order("date", { ascending: false });
+    if (error) throw error;
+    return data.map(this.mapPayment);
+  }
+
+  async getPaymentsWithOrders(): Promise<(Payment & { order?: RepairOrderWithDetails })[]> {
+    const payments = await this.getPayments();
+    return Promise.all(payments.map(async payment => {
+      const order = await this.getOrderWithDetails(payment.orderId);
+      return { ...payment, order };
+    }));
+  }
+
+  async getPaymentsByOrder(orderId: string): Promise<Payment[]> {
+    const { data, error } = await this.client.from("payments").select("*").eq("order_id", orderId).order("date", { ascending: false });
+    if (error) throw error;
+    return data.map(this.mapPayment);
+  }
+
+  async createPayment(payment: InsertPayment): Promise<Payment> {
+    const dbPayment = {
+      order_id: payment.orderId,
+      amount: payment.amount,
+      method: payment.method,
+      notes: payment.notes,
+    };
+    const { data, error } = await this.client.from("payments").insert(dbPayment).select().single();
+    if (error) throw error;
+    return this.mapPayment(data);
+  }
+
+  // Stats
+  async getStats(): Promise<{
+    activeOrders: number;
+    pendingDiagnosis: number;
+    readyForPickup: number;
+    monthlyRevenue: number;
+  }> {
+    // This is expensive if we just fetch all. Ideally we use count queries.
+    // For now, stick to simple fetch to match logic, or optimize slightly.
+
+    // Active orders
+    const { count: activeOrders } = await this.client.from("repair_orders").select("*", { count: 'exact', head: true }).neq("status", "entregado");
+
+    // Pending diagnosis
+    const { count: pendingDiagnosis } = await this.client.from("repair_orders").select("*", { count: 'exact', head: true }).in("status", ["recibido", "diagnostico"]);
+
+    // Ready for pickup
+    const { count: readyForPickup } = await this.client.from("repair_orders").select("*", { count: 'exact', head: true }).eq("status", "listo");
+
+    // Monthly Revenue
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+
+    const { data: payments } = await this.client.from("payments").select("amount").gte("date", monthStart).lte("date", monthEnd);
+
+    const monthlyRevenue = payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+
+    return {
+      activeOrders: activeOrders || 0,
+      pendingDiagnosis: pendingDiagnosis || 0,
+      readyForPickup: readyForPickup || 0,
+      monthlyRevenue,
+    };
+  }
+}
+
+// Logic to switch storage
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+export const storage = (supabaseUrl && supabaseKey)
+  ? new SupabaseStorage(supabaseUrl, supabaseKey)
+  : new MemStorage();

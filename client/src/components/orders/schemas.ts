@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { intakeChecklistSchema } from "@shared/schema";
 
 export const orderFormSchema = z.object({
     clientId: z.string().min(1, "Selecciona un cliente"),
@@ -9,6 +10,7 @@ export const orderFormSchema = z.object({
     priority: z.enum(["normal", "urgente"]),
     technicianName: z.string(),
     notes: z.string(),
+    intakeChecklist: intakeChecklistSchema,
 });
 
 export const newDeviceSchema = z.object({

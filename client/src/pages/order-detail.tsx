@@ -412,8 +412,41 @@ export default function OrderDetail() {
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                Checklist de Recepción
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {[
+                { key: "charges", label: "¿Carga?" },
+                { key: "powersOn", label: "¿Enciende?" },
+                { key: "dropped", label: "¿Golpeado?" },
+                { key: "wet", label: "¿Mojado?" },
+                { key: "openedBefore", label: "¿Abierto previamente?" },
+                { key: "inWarranty", label: "¿En garantía?" },
+              ].map((item) => {
+                const val = order.intakeChecklist?.[item.key as keyof typeof order.intakeChecklist];
+                let text = "No especificado";
+                let color = "text-muted-foreground";
+
+                if (val === "yes") { text = "Sí"; color = "text-green-600 dark:text-green-400 font-medium"; }
+                else if (val === "no") { text = "No"; color = "text-red-600 dark:text-red-400 font-medium"; }
+                else if (val === "unknown") { text = "Desconocido"; color = "text-orange-600 dark:text-orange-400 font-medium"; }
+
+                return (
+                  <div key={item.key} className="flex justify-between items-center text-sm border-b last:border-0 pb-2 last:pb-0">
+                    <span>{item.label}</span>
+                    <span className={color}>{text}</span>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
         </div>
       </div>
-    </div>
+    </div >
   );
 }

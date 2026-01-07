@@ -52,8 +52,8 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, showIcon = true }: StatusBadgeProps) {
-  const config = statusConfig[status];
-  const Icon = config.icon;
+const config = statusConfig[status as keyof typeof statusConfig] ?? statusConfig["recibido"];
+const Icon = config.icon;
 
   return (
     <Badge 
