@@ -9,7 +9,8 @@ import {
   DollarSign,
   Save,
   Printer,
-  ChevronRight
+  ChevronRight,
+  Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import type { RepairOrderWithDetails, OrderStatus, Payment } from "@shared/schema";
+import { PaymentDialog } from "@/components/payment-dialog";
 
 const statusOptions: { value: OrderStatus; label: string }[] = [
   { value: "recibido", label: "Recibido" },
@@ -45,6 +47,8 @@ export default function OrderDetail() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const orderId = params?.id;
+
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
 
   const { data: order, isLoading } = useQuery<RepairOrderWithDetails>({
     queryKey: ["/api/orders", orderId],
@@ -99,8 +103,16 @@ export default function OrderDetail() {
   }
 
   const currentData = { ...order, ...formData };
+
+  // Calculate finances
   const totalPaid = order.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
-  const balance = (currentData.finalCost || currentData.estimatedCost) - totalPaid;
+  const final = currentData.finalCost ?? 0;
+  const estimated = currentData.estimatedCost ?? 0;
+
+  // Logic: Use final cost if > 0, else estimated cost. If both 0, cost not defined.
+  const totalCost = final > 0 ? final : estimated;
+  const isCostDefined = totalCost > 0;
+  const balance = Math.max(0, totalCost - totalPaid);
 
   const handleSave = () => {
     updateOrder.mutate(formData);
@@ -108,6 +120,12 @@ export default function OrderDetail() {
 
   return (
     <div className="space-y-6">
+      <PaymentDialog
+        open={isPaymentDialogOpen}
+        onOpenChange={setIsPaymentDialogOpen}
+        defaultOrderId={orderId}
+      />
+
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild data-testid="button-back">
@@ -228,13 +246,22 @@ export default function OrderDetail() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <DollarSign className="h-4 w-4" />
                 Costos y Pagos
               </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPaymentDialogOpen(true)}
+                disabled={!isCostDefined}
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Registrar Pago
+              </Button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label>Costo Estimado</Label>
@@ -260,10 +287,23 @@ export default function OrderDetail() {
                 </div>
                 <div>
                   <Label>Saldo Pendiente</Label>
-                  <div className={`h-10 flex items-center px-3 rounded-md border ${balance > 0 ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300' : 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300'}`}>
-                    ${balance.toFixed(2)}
-                  </div>
+                  {isCostDefined ? (
+                    <div className={`h-10 flex items-center px-3 rounded-md border font-medium ${balance > 0 ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300' : 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300'}`}>
+                      ${balance.toFixed(2)}
+                    </div>
+                  ) : (
+                    <div className="h-10 flex items-center px-3 rounded-md border bg-muted text-muted-foreground text-sm">
+                      Costo no definido
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              <div className="flex justify-between items-center text-sm px-1">
+                <span className="text-muted-foreground">Total Pagado: <span className="font-medium text-foreground">${totalPaid.toFixed(2)}</span></span>
+                {isCostDefined && (
+                  <span className="text-muted-foreground">Costo Total: <span className="font-medium text-foreground">${totalCost.toFixed(2)}</span></span>
+                )}
               </div>
 
               {order.payments && order.payments.length > 0 && (
@@ -271,10 +311,15 @@ export default function OrderDetail() {
                   <Label className="mb-2 block">Historial de Pagos</Label>
                   <div className="space-y-2">
                     {order.payments.map((payment: Payment) => (
-                      <div key={payment.id} className="flex justify-between items-center text-sm py-2 px-3 bg-muted rounded-md">
-                        <span>{format(new Date(payment.date), "d MMM yyyy", { locale: es })}</span>
-                        <span className="capitalize">{payment.method}</span>
-                        <span className="font-medium">${payment.amount.toFixed(2)}</span>
+                      <div key={payment.id} className="flex flex-col space-y-1 text-sm py-2 px-3 bg-muted rounded-md">
+                        <div className="flex justify-between items-center">
+                          <span>{format(new Date(payment.date), "d MMM yyyy", { locale: es })}</span>
+                          <span className="font-medium text-green-600 dark:text-green-400">+${payment.amount.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-muted-foreground text-xs">
+                          <span className="capitalize">{payment.method}</span>
+                          {payment.notes && <span className="italic max-w-[200px] truncate">"{payment.notes}"</span>}
+                        </div>
                       </div>
                     ))}
                   </div>

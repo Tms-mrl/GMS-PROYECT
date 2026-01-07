@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { 
-  DollarSign, 
-  Plus, 
+import { useQuery } from "@tanstack/react-query";
+import {
+  DollarSign,
+  Plus,
   Search,
-  CreditCard,
   Banknote,
+  CreditCard,
   ArrowRightLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,28 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/empty-state";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import type { Payment, RepairOrderWithDetails, PaymentMethod } from "@shared/schema";
+import { PaymentDialog } from "@/components/payment-dialog";
 
 const methodIcons: Record<PaymentMethod, typeof Banknote> = {
   efectivo: Banknote,
@@ -51,56 +34,10 @@ const methodLabels: Record<PaymentMethod, string> = {
 export default function Payments() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedOrderId, setSelectedOrderId] = useState("");
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
-  const [paymentNotes, setPaymentNotes] = useState("");
-  const { toast } = useToast();
 
   const { data: payments, isLoading: paymentsLoading } = useQuery<(Payment & { order?: RepairOrderWithDetails })[]>({
     queryKey: ["/api/payments"],
   });
-
-  const { data: orders } = useQuery<RepairOrderWithDetails[]>({
-    queryKey: ["/api/orders"],
-  });
-
-  const pendingOrders = orders?.filter(o => {
-    const totalPaid = o.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
-    const total = o.finalCost || o.estimatedCost;
-    return total > totalPaid && o.status !== "entregado";
-  });
-
-  const createPayment = useMutation({
-    mutationFn: async (data: { orderId: string; amount: number; method: PaymentMethod; notes: string }) => {
-      const res = await apiRequest("POST", "/api/payments", data);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
-      toast({ title: "Pago registrado" });
-      setIsDialogOpen(false);
-      setSelectedOrderId("");
-      setPaymentAmount("");
-      setPaymentMethod("efectivo");
-      setPaymentNotes("");
-    },
-    onError: () => {
-      toast({ title: "Error al registrar el pago", variant: "destructive" });
-    },
-  });
-
-  const handleSubmitPayment = () => {
-    if (!selectedOrderId || !paymentAmount) return;
-    createPayment.mutate({
-      orderId: selectedOrderId,
-      amount: parseFloat(paymentAmount),
-      method: paymentMethod,
-      notes: paymentNotes,
-    });
-  };
 
   const totalToday = payments?.filter(p => {
     const today = new Date().toDateString();
@@ -113,6 +50,18 @@ export default function Payments() {
     return paymentDate.getMonth() === now.getMonth() && paymentDate.getFullYear() === now.getFullYear();
   }).reduce((sum, p) => sum + p.amount, 0) ?? 0;
 
+  const filteredPayments = payments?.filter(payment => {
+    if (!searchQuery) return true;
+    const searchLower = searchQuery.toLowerCase();
+    const amount = payment.amount.toString();
+    const clientName = payment.order?.client?.name?.toLowerCase() || "";
+    const device = `${payment.order?.device?.brand} ${payment.order?.device?.model}`.toLowerCase();
+
+    return amount.includes(searchLower) ||
+      clientName.includes(searchLower) ||
+      device.includes(searchLower);
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -120,95 +69,16 @@ export default function Payments() {
           <h1 className="text-2xl font-semibold">Cobros y Pagos</h1>
           <p className="text-muted-foreground">Gestiona los pagos de las reparaciones</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-new-payment">
-              <Plus className="h-4 w-4 mr-2" />
-              Registrar Pago
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Registrar Pago</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 pt-4">
-              <div>
-                <Label>Orden de Reparación *</Label>
-                <Select value={selectedOrderId} onValueChange={setSelectedOrderId}>
-                  <SelectTrigger data-testid="select-order-payment">
-                    <SelectValue placeholder="Selecciona una orden" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {pendingOrders?.map((order) => {
-                      const totalPaid = order.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
-                      const balance = (order.finalCost || order.estimatedCost) - totalPaid;
-                      return (
-                        <SelectItem key={order.id} value={order.id}>
-                          {order.device.brand} {order.device.model} - {order.client.name} (${balance.toFixed(2)} pendiente)
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>Monto *</Label>
-                <Input
-                  type="number"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder="0.00"
-                  min="0.01"
-                  step="0.01"
-                  data-testid="input-payment-amount"
-                />
-              </div>
-
-              <div>
-                <Label>Método de Pago</Label>
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                  {(["efectivo", "tarjeta", "transferencia"] as PaymentMethod[]).map((method) => {
-                    const Icon = methodIcons[method];
-                    return (
-                      <Button
-                        key={method}
-                        type="button"
-                        variant={paymentMethod === method ? "default" : "outline"}
-                        className="flex-col h-auto py-3 gap-1"
-                        onClick={() => setPaymentMethod(method)}
-                        data-testid={`button-method-${method}`}
-                      >
-                        <Icon className="h-5 w-5" />
-                        <span className="text-xs">{methodLabels[method]}</span>
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <Label>Notas</Label>
-                <Textarea
-                  value={paymentNotes}
-                  onChange={(e) => setPaymentNotes(e.target.value)}
-                  placeholder="Notas adicionales..."
-                  data-testid="input-payment-notes"
-                />
-              </div>
-
-              <Button 
-                className="w-full" 
-                onClick={handleSubmitPayment}
-                disabled={!selectedOrderId || !paymentAmount || createPayment.isPending}
-                data-testid="button-submit-payment"
-              >
-                {createPayment.isPending ? "Registrando..." : "Registrar Pago"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => setIsDialogOpen(true)} data-testid="button-new-payment">
+          <Plus className="h-4 w-4 mr-2" />
+          Registrar Pago
+        </Button>
       </div>
+
+      <PaymentDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
@@ -261,12 +131,12 @@ export default function Payments() {
                 <Skeleton key={i} className="h-16" />
               ))}
             </div>
-          ) : payments && payments.length > 0 ? (
+          ) : filteredPayments && filteredPayments.length > 0 ? (
             <div className="space-y-2">
-              {payments.map((payment) => {
+              {filteredPayments.map((payment) => {
                 const Icon = methodIcons[payment.method];
                 return (
-                  <div 
+                  <div
                     key={payment.id}
                     className="flex items-center justify-between p-4 rounded-md bg-muted/50"
                     data-testid={`payment-${payment.id}`}
@@ -279,9 +149,14 @@ export default function Payments() {
                         <p className="font-medium">
                           {payment.order?.device?.brand} {payment.order?.device?.model}
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          {payment.order?.client?.name} - {format(new Date(payment.date), "d MMM yyyy HH:mm", { locale: es })}
-                        </p>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-sm text-muted-foreground">
+                          <span>{payment.order?.client?.name}</span>
+                          <span className="hidden sm:inline">•</span>
+                          <span>{format(new Date(payment.date), "d MMM yyyy HH:mm", { locale: es })}</span>
+                        </div>
+                        {payment.notes && (
+                          <p className="text-xs text-muted-foreground mt-1 italic">"{payment.notes}"</p>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">
