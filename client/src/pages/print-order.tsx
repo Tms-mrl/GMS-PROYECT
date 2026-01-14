@@ -44,9 +44,7 @@ export default function PrintOrder() {
             // Small delay to ensure rendering is complete (including icons/fonts)
             const timer = setTimeout(() => {
                 setIsReadyToPrint(true);
-                // We don't auto-print immediately if we want to allow editing first, 
-                // but user requested to keep existing behavior. 
-                // We will keep auto-print but maybe they can cancel and edit.
+                // Auto-print disabled to allow reviewing layout first, or re-enable if desired behavior
                 window.print();
             }, 500);
             return () => clearTimeout(timer);
@@ -74,101 +72,158 @@ export default function PrintOrder() {
         );
     }
 
-    const ReceiptCopy = ({ title, showTerms }: { title: string, showTerms?: boolean }) => (
-        <div className="border border-black p-6 text-sm mb-8 break-inside-avoid relative bg-white">
-            {/* Header */}
-            <div className="flex justify-between items-start mb-6 border-b border-black pb-4">
-                <div>
-                    <h1 className="text-2xl font-bold">RepairShop</h1>
-                    <p className="text-xs mt-1">Servicio Técnico Especializado</p>
-                    <p className="text-xs">Av. Principal 123, Ciudad</p>
-                    <p className="text-xs">Tel: (555) 123-4567</p>
+    // Common Header for both copies
+    const Header = ({ title }: { title: string }) => (
+        <div className="flex justify-between items-start border-b border-black pb-2 mb-2">
+            <div>
+                <h1 className="text-xl font-bold uppercase tracking-tight">RepairShop</h1>
+                <p className="text-[10px]">Servicio Técnico Especializado</p>
+                <p className="text-[10px]">Av. Principal 123, Ciudad | (555) 123-4567</p>
+            </div>
+            <div className="text-right">
+                <div className="text-lg font-bold">ORDEN #{order.id.slice(0, 8)}</div>
+                <div className="inline-block border border-black px-2 py-0.5 text-xs font-bold mt-1 bg-gray-100">
+                    {title}
                 </div>
-                <div className="text-right">
-                    <h2 className="text-xl font-bold">ORDEN #{order.id.slice(0, 8)}</h2>
-                    <p className="font-bold border border-black px-2 py-1 inline-block mt-2">
-                        {title}
-                    </p>
-                    <p className="mt-2">
-                        Fecha: {format(new Date(order.createdAt), "dd/MM/yyyy HH:mm", { locale: es })}
-                    </p>
+                <div className="text-[10px] mt-1">
+                    {format(new Date(order.createdAt), "dd/MM/yyyy HH:mm", { locale: es })}
                 </div>
             </div>
+        </div>
+    );
 
-            {/* Info Grid */}
-            <div className="grid grid-cols-2 gap-8 mb-6">
-                {/* Client Info */}
-                <div>
-                    <h3 className="font-bold border-b border-black mb-2 uppercase text-xs">Información del Cliente</h3>
-                    <div className="space-y-1">
-                        <p><span className="font-semibold">Nombre:</span> {order.client.name}</p>
-                        <p><span className="font-semibold">Teléfono:</span> {order.client.phone}</p>
-                        {order.client.dni && <p><span className="font-semibold">DNI:</span> {order.client.dni}</p>}
-                        {order.client.address && <p><span className="font-semibold">Dirección:</span> {order.client.address}</p>}
-                        {order.client.email && <p><span className="font-semibold">Email:</span> {order.client.email}</p>}
-                    </div>
-                </div>
+    // --- CUSTOMER COPY COMPONENT ---
+    const CustomerCopy = () => (
+        <div className="flex flex-col h-full relative">
+            <Header title="COMPROBANTE CLIENTE" />
 
-                {/* Device Info */}
-                <div>
-                    <h3 className="font-bold border-b border-black mb-2 uppercase text-xs">Información del Dispositivo</h3>
-                    <div className="space-y-1">
-                        <p><span className="font-semibold">Equipo:</span> {order.device.brand} {order.device.model}</p>
-                        <p><span className="font-semibold">Color:</span> {order.device.color}</p>
-                        {order.device.imei && <p><span className="font-semibold">IMEI:</span> {order.device.imei}</p>}
-                        {order.device.serialNumber && <p><span className="font-semibold">Serie:</span> {order.device.serialNumber}</p>}
-                        <p><span className="font-semibold">Condición:</span> {order.device.condition}</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Service Info */}
-            <div className="mb-6">
-                <h3 className="font-bold border-b border-black mb-2 uppercase text-xs">Detalles del Servicio</h3>
-                <div className="grid grid-cols-1 gap-2">
+            <div className="flex-1 flex flex-col gap-2 min-h-0">
+                {/* Main Grid: Client Basic & Fees / Device */}
+                <div className="grid grid-cols-2 gap-4 text-xs">
                     <div>
-                        <span className="font-semibold">Problema Reportado:</span>
-                        <p className="ml-4">{order.problem}</p>
+                        <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Cliente</h3>
+                        <p>{order.client.name}</p>
+                        <p>{order.client.phone} / {order.client.email}</p>
                     </div>
-                    {order.notes && (
-                        <div>
-                            <span className="font-semibold">Notas:</span>
-                            <p className="ml-4">{order.notes}</p>
-                        </div>
-                    )}
+                    <div>
+                        <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Dispositivo</h3>
+                        <p><span className="font-semibold">Modelo:</span> {order.device.brand} {order.device.model}</p>
+                        <p><span className="font-semibold">IMEI/SN:</span> {order.device.imei || order.device.serialNumber || 'N/A'}</p>
+                    </div>
+                </div>
+
+                {/* Financials */}
+                <div className="border border-black p-2 mt-2 flex justify-between items-center bg-gray-50 text-xs">
+                    <div>
+                        <span className="font-bold mr-2">Total Estimado:</span>
+                        ${order.estimatedCost.toFixed(2)}
+                    </div>
+                    {/* Add deposit/due logic here if available in schema */}
+                    <div>
+                        <span className="font-bold mr-2">A Pagar:</span>
+                        ${order.estimatedCost.toFixed(2)}
+                    </div>
+                </div>
+
+                {/* Terms and Conditions - Fills remaining height */}
+                <div className="flex-1 border border-black p-2 mt-2 flex flex-col min-h-0">
+                    <h3 className="font-bold text-[10px] mb-1">TÉRMINOS Y CONDICIONES</h3>
+                    {/* Use overflow-hidden to prevent page break if text is massive, 
+                        though requirement says fill height. Flex-1 does that. */}
+                    <div className="text-[10px] leading-tight text-justify overflow-y-hidden whitespace-pre-wrap flex-grow">
+                        {termsContent}
+                    </div>
                 </div>
             </div>
 
-            {/* Footer / Cost */}
-            <div className="flex justify-between items-end mt-8 pt-4 border-t border-black">
-                <div className="text-xs max-w-[60%] space-y-4">
-                    {showTerms && (
-                        <div className="whitespace-pre-wrap">
-                            <strong>Términos y Condiciones:</strong> {termsContent}
-                        </div>
-                    )}
-                    <div className="pt-8 grid grid-cols-2 gap-8">
-                        <div className="border-t border-black pt-2 text-center">Firma Cliente</div>
-                        <div className="border-t border-black pt-2 text-center">Firma Técnico</div>
+            {/* Signature Area */}
+            <div className="mt-4 pt-4 border-t border-black flex justify-between text-[10px]">
+                <div className="w-1/3 text-center">
+                    <div className="border-t border-black my-4"></div>
+                    Firma Cliente
+                </div>
+                <div className="w-1/3 text-center">
+                    <div className="border-t border-black my-4"></div>
+                    Recibido por (Tienda)
+                </div>
+            </div>
+        </div>
+    );
+
+    // --- TECHNICIAN COPY COMPONENT ---
+    const TechnicianCopy = () => (
+        <div className="flex flex-col h-full relative">
+            <Header title="ORDEN DE TALLER" />
+
+            <div className="flex-1 flex flex-col gap-2 min-h-0 text-xs text-black">
+                {/* Detailed Info Grid */}
+                <div className="grid grid-cols-2 gap-4">
+                    {/* Full Client Info */}
+                    <div>
+                        <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Detalle Cliente</h3>
+                        <p className="truncate"><span className="font-semibold">Nombre:</span> {order.client.name}</p>
+                        <p className="truncate"><span className="font-semibold">Tel/WS:</span> {order.client.phone}</p>
+                        {order.client.email && <p className="truncate"><span className="font-semibold">Email:</span> {order.client.email}</p>}
+                        {order.client.address && <p className="truncate"><span className="font-semibold">Dir:</span> {order.client.address}</p>}
+                    </div>
+
+                    {/* Full Device Info */}
+                    <div>
+                        <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Detalle Equipo</h3>
+                        <p><span className="font-semibold">Equipo:</span> {order.device.brand} {order.device.model}</p>
+                        <p><span className="font-semibold">Color:</span> {order.device.color} | <span className="font-semibold">Cond:</span> {order.device.condition}</p>
+                        <p><span className="font-semibold">IMEI:</span> {order.device.imei || '-'}</p>
+                        <p><span className="font-semibold">SN:</span> {order.device.serialNumber || '-'}</p>
                     </div>
                 </div>
-                <div className="text-right min-w-[30%]">
-                    <div className="space-y-1">
-                        <div className="flex justify-between">
-                            <span>Costo Estimado:</span>
-                            <span className="font-bold">${order.estimatedCost.toFixed(2)}</span>
-                        </div>
+
+                {/* Problem & Notes */}
+                <div className="border border-black p-2 mt-1">
+                    <p><span className="font-bold">Problema:</span> {order.problem}</p>
+                    {order.notes && <p className="mt-1 border-t border-dashed border-gray-400 pt-1"><span className="font-bold">Notas Internas:</span> {order.notes}</p>}
+                </div>
+
+                {/* Intake Checklist */}
+                <div className="flex-1 mt-1 border border-black p-2 min-h-0 overflow-y-auto">
+                    <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Checklist de Ingreso</h3>
+                    <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-[10px]">
+                        {order.intakeChecklist && typeof order.intakeChecklist === 'object' ? (
+                            Object.entries(order.intakeChecklist).map(([key, value]) => (
+                                <div key={key} className="flex items-center justify-between border-b border-gray-100 pb-0.5">
+                                    <span className="capitalize truncate mr-1">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                    <span className={`font-bold ${value === true || value === 'yes' ? 'text-black' :
+                                        value === false || value === 'no' ? 'text-gray-400' : 'text-gray-600'
+                                        }`}>
+                                        {value === true || value === 'yes' ? 'SI' :
+                                            value === false || value === 'no' ? 'NO' :
+                                                typeof value === 'string' ? value : '-'}
+                                    </span>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="col-span-3 text-gray-500 italic">No hay checklist registrado.</p>
+                        )}
                     </div>
+                </div>
+            </div>
+
+            {/* Tech Footer */}
+            <div className="mt-2 pt-2 border-t border-black text-[10px] flex justify-between">
+                <div>
+                    <p>ID Interno: {order.id}</p>
+                </div>
+                <div className="w-1/3 text-center">
+                    <div className="border-t border-black my-4"></div>
+                    Firma Técnico Responsable
                 </div>
             </div>
         </div>
     );
 
     return (
-        <div className="min-h-screen bg-white text-black p-4 md:p-8 font-mono print:p-0 print:m-0 print:bg-white print:overflow-visible">
-
+        <div className="min-h-screen bg-gray-100 text-black font-sans">
             {/* Screen-only Controls */}
-            <div className="print:hidden mb-6 flex justify-between items-center max-w-[21cm] mx-auto z-50 relative">
+            <div className="print:hidden p-4 bg-white shadow-sm mb-4 flex justify-between items-center sticky top-0 z-50">
                 <Button variant="outline" asChild>
                     <Link href={`/ordenes/${orderId}`}>
                         <ArrowLeft className="h-4 w-4 mr-2" />
@@ -183,7 +238,7 @@ export default function PrintOrder() {
                     </Button>
                     <Button onClick={() => window.print()} disabled={!isReadyToPrint}>
                         <Printer className="h-4 w-4 mr-2" />
-                        Imprimir Comprobante
+                        Imprimir A4
                     </Button>
                 </div>
             </div>
@@ -202,7 +257,7 @@ export default function PrintOrder() {
                             placeholder="Ingrese los términos y condiciones..."
                         />
                         <p className="text-xs text-muted-foreground mt-2">
-                            Estos cambios se aplicarán solo a la copia del cliente y se guardarán en este navegador.
+                            Afecta solo a la impresión actual en este navegador.
                         </p>
                     </div>
                     <DialogFooter>
@@ -212,42 +267,74 @@ export default function PrintOrder() {
                 </DialogContent>
             </Dialog>
 
-            {/* Receipt Content - A4 Width centered */}
-            {/* Using createPortal-like technique via fixed positioning for print to escape app layout */}
-            <div className="print-area max-w-[21cm] mx-auto bg-white print:w-full print:max-w-none print:absolute print:top-0 print:left-0 print:m-0">
-                <ReceiptCopy title="COPIA CLIENTE" showTerms={true} />
-                <div className="border-b-2 border-dashed border-gray-300 my-8 print:my-4 print:border-gray-800" />
-                <ReceiptCopy title="COPIA TÉCNICO" showTerms={false} />
+            {/* PRINT CONTAINER / SHEET */}
+            <div id="printable-area" className="mx-auto bg-white shadow-lg print:shadow-none print:m-0 print:p-0 overflow-hidden"
+                style={{ width: '210mm', height: '296mm' }} // Slightly less than 297 to be safe
+            >
+                {/* Using flex column to split the page exactly in half (or weighted) */}
+                <div className="flex flex-col h-full p-[10mm]">
+
+                    {/* CUSTOMER COPY SECTION - Flex grow to fill top half approx */}
+                    <div className="flex-1 min-h-0 pb-4">
+                        <CustomerCopy />
+                    </div>
+
+                    {/* SEPARATOR */}
+                    <div className="border-b-2 border-dashed border-gray-400 w-full my-2 relative">
+                        <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-[10px] text-gray-500 rotate-180 print:block hidden">
+                            CORTAR AQUÍ
+                        </span>
+                        <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-[10px] text-gray-500 block print:hidden">
+                            LÍNEA DE CORTE
+                        </span>
+                    </div>
+
+                    {/* TECHNICIAN COPY SECTION - Flex grow to fill bottom half approx */}
+                    <div className="flex-1 min-h-0 pt-4">
+                        <TechnicianCopy />
+                    </div>
+
+                </div>
             </div>
 
             <style>{`
-        @media print {
-          /* Hide everything by default */
-          body > * {
-            visibility: hidden;
-          }
-          /* Show only our print area */
-          .print-area, .print-area * {
-            visibility: visible;
-          }
-          .print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-          }
-          @page {
-            margin: 1cm;
-            size: auto;
-          }
-          /* Ensure backgrounds print */
-          body {
-            print-color-adjust: exact;
-            -webkit-print-color-adjust: exact;
-            background: white;
-          }
-        }
-      `}</style>
+                    @media print {
+                    @page {
+                        size: A4;
+                        margin: 0; 
+                    }
+
+                    /* ESTO ES LO QUE FALTABA: */
+                    html, body {
+                        height: 100vh; 
+                        height: 297mm; 
+                        overflow: hidden !important; /* Corta radicalmente el scroll */
+                    }
+
+                    body * {
+                        visibility: hidden; 
+                    }
+
+                    #printable-area, #printable-area * {
+                        visibility: visible;
+                    }
+
+                    #printable-area {
+                        position: fixed;
+                        left: 0;
+                        top: 0;
+                        width: 210mm !important;
+                        height: 296mm !important; 
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        z-index: 9999;
+                        overflow: hidden !important; 
+
+                        page-break-after: avoid !important;
+                        break-after: avoid !important;
+                    }
+                }
+            `}</style>
         </div>
     );
 }
