@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { HelpCircle, X, Upload, Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 import {
   Dialog,
   DialogContent,
@@ -52,13 +53,20 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
     mutationFn: async (data: SupportFormValues) => {
       const formData = new FormData();
       formData.append("message", data.message);
-      
+
       images.forEach((image, index) => {
         formData.append(`images`, image);
       });
 
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       const res = await fetch("/api/support", {
         method: "POST",
+        headers,
         body: formData,
         credentials: "include",
       });
@@ -78,9 +86,9 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
       return res.json();
     },
     onSuccess: () => {
-      toast({ 
-        title: "Mensaje enviado", 
-        description: "Tu solicitud de soporte ha sido enviada correctamente" 
+      toast({
+        title: "Mensaje enviado",
+        description: "Tu solicitud de soporte ha sido enviada correctamente"
       });
       form.reset();
       setImages([]);
@@ -88,20 +96,20 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
       onOpenChange(false);
     },
     onError: (error: Error) => {
-      toast({ 
-        title: "Error al enviar", 
+      toast({
+        title: "Error al enviar",
         description: error.message || "No se pudo enviar el mensaje",
-        variant: "destructive" 
+        variant: "destructive"
       });
     },
   });
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
+
     // Validar que sean imágenes
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    
+
     if (imageFiles.length === 0) {
       toast({
         title: "Archivo inválido",
@@ -125,7 +133,7 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
   const removeImage = (index: number) => {
     const newImages = images.filter((_, i) => i !== index);
     setImages(newImages);
-    
+
     // Revocar URL del preview eliminado
     URL.revokeObjectURL(imagePreviews[index]);
     const newPreviews = imagePreviews.filter((_, i) => i !== index);
@@ -188,8 +196,8 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
                   >
                     <Upload className="h-4 w-4" />
                     <span className="text-sm">
-                      {images.length >= 5 
-                        ? "Máximo de imágenes alcanzado" 
+                      {images.length >= 5
+                        ? "Máximo de imágenes alcanzado"
                         : "Seleccionar imágenes"}
                     </span>
                   </Label>

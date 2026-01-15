@@ -11,6 +11,7 @@ export type PaymentMethod = typeof paymentMethods[number];
 // Client schema
 export interface Client {
   id: string;
+  userId: string; // [!code ++] <-- NUEVO: Vincula al cliente con el dueño del taller
   name: string;
   dni: string;
   address: string;
@@ -37,6 +38,7 @@ export type LockType = "PIN" | "PATRON" | "PASSWORD" | "";
 
 export interface Device {
   id: string;
+  userId: string; // [!code ++] <-- NUEVO
   clientId: string;
   brand: string;
   model: string;
@@ -88,6 +90,7 @@ export const intakeChecklistSchema = z.object({
 // Repair Order schema
 export interface RepairOrder {
   id: string;
+  userId: string; // [!code ++] <-- NUEVO
   clientId: string;
   deviceId: string;
   status: OrderStatus;
@@ -127,6 +130,7 @@ export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
 // Payment schema
 export interface Payment {
   id: string;
+  userId: string; // [!code ++] <-- NUEVO
   orderId: string;
   amount: number;
   method: PaymentMethod;
@@ -154,7 +158,7 @@ export interface RepairOrderWithDetails extends RepairOrder {
 export interface User {
   id: string;
   username: string;
-  password: string;
+  // password removed from interface for security (optional)
 }
 
 export const insertUserSchema = z.object({
@@ -163,4 +167,3 @@ export const insertUserSchema = z.object({
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
-

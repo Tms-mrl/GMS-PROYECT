@@ -17,6 +17,9 @@ import ClientDetail from "@/pages/client-detail";
 import Payments from "@/pages/payments";
 import Reports from "@/pages/reports";
 import PrintOrder from "@/pages/print-order";
+import AuthPage from "@/pages/auth-page";
+import { AuthProvider } from "@/hooks/use-auth";
+import { ProtectedRoute } from "@/components/protected-route";
 
 function Router() {
   return (
@@ -44,25 +47,34 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <SidebarProvider style={style as React.CSSProperties}>
-          <div className="flex min-h-screen w-full">
-            <AppSidebar />
-            <div className="flex flex-col flex-1 min-w-0">
-              <header className="sticky top-0 z-50 flex items-center justify-between gap-4 px-4 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                <SidebarTrigger data-testid="button-sidebar-toggle" />
-                <ThemeToggle />
-              </header>
-              <main className="flex-1 overflow-auto p-6">
-                <div className="max-w-7xl mx-auto">
-                  <Router />
-                </div>
-              </main>
-            </div>
-          </div>
-        </SidebarProvider>
+      <AuthProvider>
+        <Switch>
+          <Route path="/auth" component={AuthPage} />
+          <Route> 
+            <ProtectedRoute
+              component={() => (
+                <SidebarProvider style={style as React.CSSProperties}>
+                  <div className="flex min-h-screen w-full">
+                    <AppSidebar />
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <header className="sticky top-0 z-50 flex items-center justify-between gap-4 px-4 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                        <SidebarTrigger data-testid="button-sidebar-toggle" />
+                        <ThemeToggle />
+                      </header>
+                      <main className="flex-1 overflow-auto p-6">
+                        <div className="max-w-7xl mx-auto">
+                          <Router />
+                        </div>
+                      </main>
+                    </div>
+                  </div>
+                </SidebarProvider>
+              )}
+            />
+          </Route>
+        </Switch>
         <Toaster />
-      </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
