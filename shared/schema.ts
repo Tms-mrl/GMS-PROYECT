@@ -8,10 +8,10 @@ export type OrderStatus = typeof orderStatuses[number];
 export const paymentMethods = ["efectivo", "tarjeta", "transferencia"] as const;
 export type PaymentMethod = typeof paymentMethods[number];
 
-// Client schema
+// --- CLIENTS ---
 export interface Client {
   id: string;
-  userId: string; // [!code ++] <-- NUEVO: Vincula al cliente con el dueño del taller
+  userId: string;
   name: string;
   dni: string;
   address: string;
@@ -33,12 +33,12 @@ export const insertClientSchema = z.object({
 
 export type InsertClient = z.infer<typeof insertClientSchema>;
 
-// Device schema
+// --- DEVICES ---
 export type LockType = "PIN" | "PATRON" | "PASSWORD" | "";
 
 export interface Device {
   id: string;
-  userId: string; // [!code ++] <-- NUEVO
+  userId: string;
   clientId: string;
   brand: string;
   model: string;
@@ -64,8 +64,7 @@ export const insertDeviceSchema = z.object({
 
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 
-
-// Intake Checklist schema
+// --- INTAKE CHECKLIST ---
 export const checklistValue = z.enum(["yes", "no", "unknown"]);
 export type ChecklistValue = z.infer<typeof checklistValue>;
 
@@ -87,10 +86,10 @@ export const intakeChecklistSchema = z.object({
   inWarranty: checklistValue.optional(),
 });
 
-// Repair Order schema
+// --- REPAIR ORDERS ---
 export interface RepairOrder {
   id: string;
-  userId: string; // [!code ++] <-- NUEVO
+  userId: string;
   clientId: string;
   deviceId: string;
   status: OrderStatus;
@@ -127,11 +126,11 @@ export const insertRepairOrderSchema = z.object({
 
 export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
 
-// Payment schema
+// --- PAYMENTS (MODIFICADO: orderId ahora es opcional) ---
 export interface Payment {
   id: string;
-  userId: string; // [!code ++] <-- NUEVO
-  orderId: string;
+  userId: string;
+  orderId: string | null; // <--- CAMBIO: Ahora puede ser null (pago suelto)
   amount: number;
   method: PaymentMethod;
   date: string;
@@ -139,7 +138,7 @@ export interface Payment {
 }
 
 export const insertPaymentSchema = z.object({
-  orderId: z.string().min(1, "Orden requerida"),
+  orderId: z.string().nullable().optional(), // <--- CAMBIO: Opcional
   amount: z.number().min(0.01, "El monto debe ser mayor a 0"),
   method: z.enum(paymentMethods),
   notes: z.string(),
@@ -147,18 +146,70 @@ export const insertPaymentSchema = z.object({
 
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 
-// Extended types with relations
+// --- NEW: BUSINESS SETTINGS (CONFIGURACIÓN) ---
+export interface BusinessSettings {
+  id: string;
+  userId: string;
+  businessName: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
+  taxId: string; // CUIT/RUT
+  logoUrl: string;
+  termsAndConditions: string;
+}
+
+export const insertSettingsSchema = z.object({
+  businessName: z.string().min(1, "Nombre del negocio requerido"),
+  address: z.string(),
+  phone: z.string(),
+  email: z.string().email().or(z.literal("")),
+  website: z.string().optional(),
+  taxId: z.string().optional(),
+  logoUrl: z.string().optional(),
+  termsAndConditions: z.string().optional(),
+});
+
+export type InsertSettings = z.infer<typeof insertSettingsSchema>;
+
+// --- NEW: INVENTORY / STOCK ---
+export interface Product {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  sku: string; // Código de barras o interno
+  quantity: number;
+  price: number; // Precio de venta
+  cost: number;  // Costo de compra
+  category: string;
+  lowStockThreshold: number; // Avisar si baja de esta cantidad
+}
+
+export const insertProductSchema = z.object({
+  name: z.string().min(1, "Nombre del producto requerido"),
+  description: z.string(),
+  sku: z.string(),
+  quantity: z.number().int().min(0),
+  price: z.number().min(0),
+  cost: z.number().min(0),
+  category: z.string(),
+  lowStockThreshold: z.number().int().default(5),
+});
+
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+
+// --- EXTENDED TYPES ---
 export interface RepairOrderWithDetails extends RepairOrder {
   client: Client;
   device: Device;
   payments: Payment[];
 }
 
-// Keep existing user types for compatibility
 export interface User {
   id: string;
   username: string;
-  // password removed from interface for security (optional)
 }
 
 export const insertUserSchema = z.object({
