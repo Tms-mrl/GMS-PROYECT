@@ -10,18 +10,40 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function registerRoutes(server: Server, app: Express) {
   const getUserId = async (req: Request): Promise<string> => {
+    // CAMBIO IMPORTANTE: Usamos un ID que NO existe en la base de datos.
+    // Así, si falla la autenticación, la base de datos buscará este ID, 
+    // no encontrará nada y devolverá una lista vacía (lo correcto y seguro).
+    const GUEST_ID = "guest-user-no-access";
+
     try {
       const authHeader = req.headers.authorization;
-      if (!authHeader) return "demo-user-id";
+
+      // 1. Si no hay cabecera, es un invitado.
+      if (!authHeader) {
+        // console.log("👻 Petición anónima. Tratando como invitado.");
+        return GUEST_ID;
+      }
+
+      // 2. Validamos el token con Supabase
       const token = authHeader.replace("Bearer ", "");
       const { data: { user }, error } = await supabase.auth.getUser(token);
-      if (error || !user) return "demo-user-id";
+
+      // 3. Si hay error o no hay usuario, es un invitado.
+      if (error || !user) {
+        console.log("❌ Token rechazado o expirado:", error?.message);
+        return GUEST_ID;
+      }
+
+      // 4. ¡ÉXITO! Devolvemos SU ID real.
       return user.id;
+
     } catch (e) {
-      console.error("Error validando usuario:", e);
-      return "demo-user-id";
+      console.error("Error crítico validando usuario:", e);
+      return GUEST_ID;
     }
   };
+
+  // ... (El resto de tus rutas API sigue igual aquí abajo) ...
 
   // CLIENTS
   app.get("/api/clients", async (req, res) => { try { const u = await getUserId(req); res.json(await storage.getClients(u)); } catch (e) { res.status(500).json({ error: "Error" }); } });
@@ -43,7 +65,42 @@ export async function registerRoutes(server: Server, app: Express) {
 
   // PAYMENTS
   app.get("/api/payments", async (req, res) => { try { const u = await getUserId(req); res.json(await storage.getPaymentsWithOrders(u)); } catch (e) { res.status(500).json({ error: "Error" }); } });
-  app.post("/api/payments", async (req, res) => { try { const p = insertPaymentSchema.safeParse(req.body); if (!p.success) return res.status(400).json({ error: p.error.errors }); const u = await getUserId(req); res.status(201).json(await storage.createPayment({ ...p.data, userId: u, user_id: u } as any)); } catch (e) { res.status(500).json({ error: "Error" }); } });
+  app.post("/api/payments", async (req, res) => {
+    try {
+      // 1. Validamos con tu nuevo schema (que incluye 'items')
+      const p = insertPaymentSchema.safeParse(req.body);
+
+      if (!p.success) {
+        // Tip: Esto te ayuda a ver en la consola qué campo falló si el frontend manda algo mal
+        console.log("Error de validación:", p.error.errors);
+        return res.status(400).json({ error: p.error.errors });
+      }
+
+      const u = await getUserId(req);
+
+      // 2. Mapeamos los datos para Supabase
+      const paymentData = {
+        amount: p.data.amount,
+        method: p.data.method,
+        notes: p.data.notes,
+        order_id: p.data.orderId || null, // Nota snake_case si tu DB es order_id
+
+        // EL PUENTE IMPORTANTE:
+        // Tomamos 'items' del schema validado y lo guardamos en 'cart_items' de la DB
+        cart_items: p.data.items || [],
+
+        user_id: u
+      };
+
+      // 3. Guardar en DB
+      const result = await storage.createPayment(paymentData as any);
+      res.status(201).json(result);
+
+    } catch (e) {
+      console.error("Error al guardar pago:", e);
+      res.status(500).json({ error: "Error interno del servidor" });
+    }
+  });
 
   // STATS
   app.get("/api/stats", async (req, res) => { try { const u = await getUserId(req); res.json(await storage.getStats(u)); } catch (e) { res.status(500).json({ error: "Error" }); } });
@@ -53,9 +110,27 @@ export async function registerRoutes(server: Server, app: Express) {
   app.post("/api/settings", async (req, res) => { try { const p = insertSettingsSchema.safeParse(req.body); if (!p.success) return res.status(400).json({ error: p.error.errors }); const u = await getUserId(req); res.json(await storage.updateSettings(u, p.data)); } catch (e) { res.status(500).json({ error: "Error" }); } });
 
   // PRODUCTS
-  app.get("/api/products", async (req, res) => { try { const u = await getUserId(req); res.json(await storage.getProducts(u)); } catch (e) { res.status(500).json({ error: "Error" }); } });
+  app.get("/api/products", async (req, res) => {
+    try {
+      const u = await getUserId(req);
+      // console.log("🔍 Solicitando productos para:", u);
+      const products = await storage.getProducts(u);
+      res.json(products);
+    } catch (e) {
+      res.status(500).json({ error: "Error fetching products" });
+    }
+  });
   app.post("/api/products", async (req, res) => { try { const p = insertProductSchema.safeParse(req.body); if (!p.success) return res.status(400).json({ error: p.error.errors }); const u = await getUserId(req); res.status(201).json(await storage.createProduct({ ...p.data, userId: u, user_id: u } as any)); } catch (e) { res.status(500).json({ error: "Error" }); } });
   app.patch("/api/products/:id", async (req, res) => { try { const u = await storage.updateProduct(req.params.id, req.body); if (!u) return res.status(404).json({ error: "Not found" }); res.json(u); } catch (e) { res.status(500).json({ error: "Error" }); } });
+  app.delete("/api/products/:id", async (req, res) => {
+    try {
+      const u = await getUserId(req);
+      await storage.deleteProduct(req.params.id, u);
+      res.sendStatus(204);
+    } catch (e) {
+      res.status(500).json({ error: "Error deleting product" });
+    }
+  });
 
   return server;
 }

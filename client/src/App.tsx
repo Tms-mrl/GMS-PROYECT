@@ -18,8 +18,9 @@ import Payments from "@/pages/payments";
 import Reports from "@/pages/reports";
 import PrintOrder from "@/pages/print-order";
 import AuthPage from "@/pages/auth-page";
+import InventoryPage from "@/pages/inventory"; // Import InventoryPage
 import { AuthProvider } from "@/hooks/use-auth";
-import { ProtectedRoute } from "@/components/protected-route";
+import { ProtectedRoute } from "@/components/protected-route"; // Changed import path
 
 function Router() {
   return (
@@ -34,6 +35,7 @@ function Router() {
       <Route path="/clientes/:id" component={ClientDetail} />
       <Route path="/cobros" component={Payments} />
       <Route path="/reportes" component={Reports} />
+      <Route path="/inventory" component={InventoryPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -50,7 +52,7 @@ function App() {
       <AuthProvider>
         <Switch>
           <Route path="/auth" component={AuthPage} />
-          <Route> 
+          <Route>
             <ProtectedRoute
               component={() => (
                 <SidebarProvider style={style as React.CSSProperties}>

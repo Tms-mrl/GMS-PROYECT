@@ -8,7 +8,8 @@ import {
   BarChart3,
   Wrench,
   Search,
-  HelpCircle
+  HelpCircle,
+  Package
 } from "lucide-react";
 import {
   Sidebar,
@@ -46,6 +47,11 @@ const menuItems = [
     title: "Cobros",
     url: "/cobros",
     icon: CreditCard,
+  },
+  {
+    title: "Stock",
+    url: "/inventory",
+    icon: Package,
   },
   {
     title: "Reportes",

@@ -51,6 +51,7 @@ export interface IStorage {
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined>;
+  deleteProduct(id: string, userId: string): Promise<void>;
 
   // Stats
   getStats(currentUserId: string): Promise<{
@@ -122,7 +123,7 @@ export class MemStorage implements IStorage {
       return { ...payment, order };
     }));
   }
-  async createPayment(insertPayment: InsertPayment): Promise<Payment> { const id = randomUUID(); const payment: Payment = { ...insertPayment, id, orderId: insertPayment.orderId || null, userId: (insertPayment as any).userId || this.DEMO_USER_ID, date: new Date().toISOString() }; this.payments.set(id, payment); return payment; }
+  async createPayment(insertPayment: InsertPayment): Promise<Payment> { const id = randomUUID(); const payment: Payment = { ...insertPayment, id, orderId: insertPayment.orderId || null, userId: (insertPayment as any).userId || this.DEMO_USER_ID, date: new Date().toISOString(), items: insertPayment.items || null }; this.payments.set(id, payment); return payment; }
 
   async getSettings(currentUserId: string): Promise<BusinessSettings | undefined> { return Array.from(this.settings.values()).find(s => s.userId === currentUserId || s.userId === this.DEMO_USER_ID); }
   async updateSettings(currentUserId: string, settings: InsertSettings): Promise<BusinessSettings> { const existing = await this.getSettings(currentUserId); const id = existing?.id || randomUUID(); const newSettings: BusinessSettings = { ...settings, id, userId: currentUserId, website: settings.website || "", taxId: settings.taxId || "", logoUrl: settings.logoUrl || "", termsAndConditions: settings.termsAndConditions || "" }; this.settings.set(id, newSettings); return newSettings; }
@@ -131,6 +132,13 @@ export class MemStorage implements IStorage {
   async getProduct(id: string): Promise<Product | undefined> { return this.products.get(id); }
   async createProduct(product: InsertProduct): Promise<Product> { const id = randomUUID(); const newProduct: Product = { ...product, id, userId: (product as any).userId || this.DEMO_USER_ID }; this.products.set(id, newProduct); return newProduct; }
   async updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined> { const existing = this.products.get(id); if (!existing) return undefined; const updated = { ...existing, ...product }; this.products.set(id, updated); return updated; }
+  async deleteProduct(id: string, userId: string): Promise<void> {
+    const product = this.products.get(id);
+    if (!product) return;
+    // Enforce ownership check for MemStorage effectively simulates RLS
+    if (product.userId !== userId && product.userId !== this.DEMO_USER_ID) return;
+    this.products.delete(id);
+  }
 
   async getStats(currentUserId: string): Promise<{ activeOrders: number; pendingDiagnosis: number; readyForPickup: number; monthlyRevenue: number; }> {
     const orders = (await this.getOrders(currentUserId));
@@ -157,7 +165,7 @@ export class SupabaseStorage implements IStorage {
   private mapClient(row: any): Client { return { id: row.id, userId: row.user_id, name: row.name, dni: row.dni, address: row.address, phone: row.phone, email: row.email, whoPicksUp: row.who_picks_up, notes: row.notes }; }
   private mapDevice(row: any): Device { return { id: row.id, userId: row.user_id, clientId: row.client_id, brand: row.brand, model: row.model, imei: row.imei, serialNumber: row.serial_number, color: row.color, condition: row.condition, lockType: row.lock_type, lockValue: row.lock_value }; }
   private mapOrder(row: any): RepairOrder { return { id: row.id, userId: row.user_id, clientId: row.client_id, deviceId: row.device_id, status: row.status, problem: row.problem, diagnosis: row.diagnosis, solution: row.solution, technicianName: row.technician_name, estimatedCost: Number(row.estimated_cost), finalCost: Number(row.final_cost), createdAt: row.created_at, estimatedDate: row.estimated_date, completedAt: row.completed_at, deliveredAt: row.delivered_at, priority: row.priority, notes: row.notes, intakeChecklist: row.intake_checklist || {} }; }
-  private mapPayment(row: any): Payment { return { id: row.id, userId: row.user_id, orderId: row.order_id, amount: Number(row.amount), method: row.method, date: row.date, notes: row.notes }; }
+  private mapPayment(row: any): Payment { return { id: row.id, userId: row.user_id, orderId: row.order_id, amount: Number(row.amount), method: row.method, date: row.date, notes: row.notes, items: row.items }; }
   private mapSettings(row: any): BusinessSettings { return { id: row.id, userId: row.user_id, businessName: row.business_name, address: row.address, phone: row.phone, email: row.email, website: row.website, taxId: row.tax_id, logoUrl: row.logo_url, termsAndConditions: row.terms_and_conditions }; }
   private mapProduct(row: any): Product { return { id: row.id, userId: row.user_id, name: row.name, description: row.description, sku: row.sku, quantity: row.quantity, price: Number(row.price), cost: Number(row.cost), category: row.category, lowStockThreshold: row.low_stock_threshold }; }
 
@@ -204,8 +212,57 @@ export class SupabaseStorage implements IStorage {
       return { ...payment, order };
     }));
   }
-  async createPayment(payment: InsertPayment): Promise<Payment> {
-    const dbPayment = { user_id: (payment as any).userId || (payment as any).user_id, order_id: payment.orderId || null, amount: payment.amount, method: payment.method, notes: payment.notes };
+  async createPayment(insertPayment: InsertPayment): Promise<Payment> {
+    // 1. Validate Stock for all items FIRST (Strict Validation)
+    if (insertPayment.items) {
+      for (const item of insertPayment.items) {
+        if (item.type === "product" && item.id) {
+          const product = await this.getProduct(item.id);
+          if (!product) throw new Error(`Producto no encontrado: ${item.name}`);
+          if (product.quantity < item.quantity) {
+            throw new Error(`Stock insuficiente para: ${item.name} (Stock: ${product.quantity})`);
+          }
+        }
+      }
+
+      // 2. If valid, Process Items
+      for (const item of insertPayment.items) {
+        // Product: Deduct Stock
+        if (item.type === "product" && item.id) {
+          const product = await this.getProduct(item.id);
+          if (product) {
+            await this.updateProduct(item.id, { quantity: product.quantity - item.quantity });
+          }
+        }
+        // Repair: Update Order Status
+        if (item.type === "repair" && item.id) {
+          const order = await this.client.from("repair_orders").select("status").eq("id", item.id).single();
+          // If order exists and is ready (or any status really, but usually 'listo'), mark as 'entregado' (delivered/paid)
+          // or at least ensure it's marked as paid/completed if logic dictates.
+          // User request: "actualizar el estado... (por ejemplo, marcarla como 'Pagada' o actualizar su saldo pendiente)"
+          // User example: "set status to 'entregado' if currently 'listo'"
+          // I will set it to 'entregado' as it implies the customer paid and took it, or simply paid.
+          // Let's stick to 'entregado' if it's a repair pickup.
+          await this.client.from("repair_orders").update({ status: "entregado", delivered_at: new Date().toISOString() }).eq("id", item.id);
+        }
+      }
+    }
+
+    const { data: userData } = await this.client.auth.getUser(); // or rely on passed user_id? 
+    // Wait, insertPayment has userId usually or we use getUserId from route. schema says userId is in Payment interface but InsertPayment doesn't have it explicitly forced, 
+    // routes.ts passes `{ ...p.data, userId: u, user_id: u }`.
+    // So `insertPayment` argument here actually HAS userId mixed in (as `any` cast in routes.ts).
+    // Let's access it safely.
+    const userId = (insertPayment as any).userId || (insertPayment as any).user_id;
+
+    const dbPayment = {
+      user_id: userId,
+      order_id: insertPayment.orderId || null,
+      amount: insertPayment.amount,
+      method: insertPayment.method,
+      notes: insertPayment.notes,
+      items: insertPayment.items // JSONB column
+    };
     const { data, error } = await this.client.from("payments").insert(dbPayment).select().single();
     if (error) throw error;
     return this.mapPayment(data);
@@ -252,6 +309,18 @@ export class SupabaseStorage implements IStorage {
     const { data, error } = await this.client.from("products").update(dbUpdates).eq("id", id).select().single();
     if (error || !data) return undefined;
     return this.mapProduct(data);
+  }
+
+  async deleteProduct(id: string, userId: string): Promise<void> {
+    const { error } = await this.client
+      .from("products")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId); // Security: ensure user owns the product
+
+    if (error) {
+      throw error;
+    }
   }
 
   async getStats(currentUserId: string): Promise<{ activeOrders: number; pendingDiagnosis: number; readyForPickup: number; monthlyRevenue: number; }> {

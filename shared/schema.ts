@@ -127,21 +127,38 @@ export const insertRepairOrderSchema = z.object({
 export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
 
 // --- PAYMENTS (MODIFICADO: orderId ahora es opcional) ---
+// --- PAYMENTS (MODIFICADO: Soporte POS multi-ítem) ---
+export interface PaymentItem {
+  type: "product" | "repair" | "other";
+  id?: string; // product_id or order_id
+  name: string;
+  quantity: number;
+  price: number;
+}
+
 export interface Payment {
   id: string;
   userId: string;
-  orderId: string | null; // <--- CAMBIO: Ahora puede ser null (pago suelto)
+  orderId: string | null; // Mantenemos legacy o para referencia rápida si es un solo repair
   amount: number;
   method: PaymentMethod;
   date: string;
   notes: string;
+  items: PaymentItem[] | null; // Nueva columna JSONB
 }
 
 export const insertPaymentSchema = z.object({
-  orderId: z.string().nullable().optional(), // <--- CAMBIO: Opcional
+  orderId: z.string().nullable().optional(),
   amount: z.number().min(0.01, "El monto debe ser mayor a 0"),
   method: z.enum(paymentMethods),
   notes: z.string(),
+  items: z.array(z.object({
+    type: z.enum(["product", "repair", "other"]),
+    id: z.string().optional(),
+    name: z.string(),
+    quantity: z.number().min(1),
+    price: z.number().min(0)
+  })).optional()
 });
 
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
