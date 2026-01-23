@@ -297,22 +297,30 @@ export default function Payments() {
                             <CommandList>
                               <CommandEmpty>No encontrada.</CommandEmpty>
                               <CommandGroup>
-                                {activeOrders.map((order) => (
-                                  <CommandItem
-                                    key={order.id}
-                                    value={order.client.name + " " + order.device.model} // Hack for search
-                                    onSelect={() => {
-                                      setSelectedOrder(order);
-                                      setIsOrderComboboxOpen(false);
-                                    }}
-                                  >
-                                    <Check className={cn("mr-2 h-4 w-4", selectedOrder?.id === order.id ? "opacity-100" : "opacity-0")} />
-                                    <div className="flex flex-col">
-                                      <span className="font-medium">{order.client.name}</span>
-                                      <span className="text-xs text-muted-foreground">{order.device.model} | Pend: {formatMoney(order.finalCost)}</span>
-                                    </div>
-                                  </CommandItem>
-                                ))}
+                                {activeOrders.map((order) => {
+                                  // Lógica: Si hay costo final, úsalo. Si no, usa el estimado.
+                                  const precioAmostrar = order.finalCost > 0 ? order.finalCost : order.estimatedCost;
+
+                                  return (
+                                    <CommandItem
+                                      key={order.id}
+                                      value={order.client.name + " " + order.device.model}
+                                      onSelect={() => {
+                                        setSelectedOrder(order);
+                                        setIsOrderComboboxOpen(false);
+                                      }}
+                                    >
+                                      <Check className={cn("mr-2 h-4 w-4", selectedOrder?.id === order.id ? "opacity-100" : "opacity-0")} />
+                                      <div className="flex flex-col">
+                                        <span className="font-medium">{order.client.name}</span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {/* Aquí usamos la variable inteligente */}
+                                          {order.device.model} | Total: {formatMoney(precioAmostrar)}
+                                        </span>
+                                      </div>
+                                    </CommandItem>
+                                  );
+                                })}
                               </CommandGroup>
                             </CommandList>
                           </Command>
@@ -328,18 +336,27 @@ export default function Payments() {
                             <span>{selectedOrder.device.brand} {selectedOrder.device.model}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Costo Final:</span>
-                            <span className="font-bold">{formatMoney(selectedOrder.finalCost)}</span>
+                            <span className="text-muted-foreground">Costo Total:</span>
+                            <span className="font-bold">
+                              {/* Visualización */}
+                              {formatMoney(selectedOrder.finalCost > 0 ? selectedOrder.finalCost : selectedOrder.estimatedCost)}
+                            </span>
                           </div>
                         </div>
                         <Button
                           className="w-full"
                           onClick={() => {
+                            // --- LÓGICA IMPORTANTE PARA EL CARRITO ---
+                            // Si el final es 0, usamos el estimado
+                            const precioReal = selectedOrder.finalCost > 0 ? selectedOrder.finalCost : selectedOrder.estimatedCost;
+
                             addToCart({
                               type: "repair",
                               id: selectedOrder.id,
                               name: `Reparación ${selectedOrder.device.model} - ${selectedOrder.client.name}`,
-                              price: selectedOrder.finalCost,
+
+                              price: precioReal, // <--- ESTO ES LO QUE ARREGLA EL COBRO EN $0
+
                               quantity: 1
                             });
                             setSelectedOrder(null);
@@ -494,51 +511,62 @@ export default function Payments() {
                 <TableHead className="text-right">Monto</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {filteredPayments.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    No hay movimientos registrados
+            {filteredPayments.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  No hay movimientos registrados
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredPayments.map((payment) => (
+                <TableRow key={payment.id}>
+                  <TableCell>
+                    {format(new Date(payment.date), "dd/MM/yyyy HH:mm", { locale: es })}
+                  </TableCell>
+                  <TableCell>
+                    {payment.orderId ? (
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 hover:bg-blue-50">
+                        <Wrench className="w-3 h-3 mr-1" /> Reparación
+                      </Badge>
+                    ) : (payment.items && payment.items.length > 0) ? (
+                      <Badge variant="outline" className="bg-green-50 text-green-700 hover:bg-green-50">
+                        <ShoppingBag className="w-3 h-3 mr-1" /> Venta
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">General</Badge>
+                    )}
+                  </TableCell>
+
+                  {/* ESTA ES LA CELDA CORREGIDA */}
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      {payment.items && payment.items.length > 0 ? (
+                        <div className="flex flex-col">
+                          {payment.items.map((item: any, idx: number) => (
+                            <span key={idx} className="font-medium text-sm flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground">{item.quantity}x</span>
+                              {item.name}
+                            </span>
+                          ))}
+                          {payment.notes && !payment.notes.startsWith("Venta de") && (
+                            <span className="text-xs text-muted-foreground italic mt-1">"{payment.notes}"</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-foreground font-medium">
+                          {payment.orderId ? "Pago de Reparación" : (payment.notes || "Movimiento general")}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="capitalize">{payment.method}</TableCell>
+                  <TableCell className="text-right font-medium">
+                    {formatMoney(payment.amount)}
                   </TableCell>
                 </TableRow>
-              ) : (
-                filteredPayments.map((payment) => (
-                  <TableRow key={payment.id}>
-                    <TableCell>
-                      {format(new Date(payment.date), "dd/MM/yyyy HH:mm", { locale: es })}
-                    </TableCell>
-                    <TableCell>
-                      {/* Logic to determine main type based on items if available */}
-                      {payment.orderId ? (
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 hover:bg-blue-50">
-                          <Wrench className="w-3 h-3 mr-1" /> Reparación
-                        </Badge>
-                      ) : (payment.items && payment.items.length > 0) ? (
-                        <Badge variant="outline" className="bg-green-50 text-green-700 hover:bg-green-50">
-                          <ShoppingBag className="w-3 h-3 mr-1" /> Venta
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">General</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-foreground">{payment.notes}</span>
-                        {payment.items && payment.items.length > 0 && (
-                          <span className="text-xs text-muted-foreground mt-1">
-                            {payment.items.map(i => `${i.quantity}x ${i.name}`).join(", ")}
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="capitalize">{payment.method}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatMoney(payment.amount)}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
+              ))
+            )}
           </Table>
         </CardContent>
       </Card>

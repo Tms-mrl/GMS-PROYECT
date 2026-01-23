@@ -12,12 +12,12 @@ interface StatsCardProps {
   iconClassName?: string;
 }
 
-export function StatsCard({ 
-  title, 
-  value, 
-  icon: Icon, 
+export function StatsCard({
+  title,
+  value,
+  icon: Icon,
   trend,
-  iconClassName = "bg-primary/10 text-primary" 
+  iconClassName = "bg-primary/10 text-primary"
 }: StatsCardProps) {
   return (
     <Card data-testid={`card-stat-${title.toLowerCase().replace(/\s/g, '-')}`}>

@@ -310,18 +310,39 @@ export default function OrderDetail() {
                 <div className="pt-4 border-t">
                   <Label className="mb-2 block">Historial de Pagos</Label>
                   <div className="space-y-2">
-                    {order.payments.map((payment: Payment) => (
-                      <div key={payment.id} className="flex flex-col space-y-1 text-sm py-2 px-3 bg-muted rounded-md">
-                        <div className="flex justify-between items-center">
-                          <span>{format(new Date(payment.date), "d MMM yyyy", { locale: es })}</span>
-                          <span className="font-medium text-green-600 dark:text-green-400">+${payment.amount.toFixed(2)}</span>
+                    {/* ... dentro de <CardContent> ... Historial de Pagos */}
+                    <div className="space-y-2">
+                      {order.payments.map((payment: Payment) => (
+                        <div key={payment.id} className="flex flex-col space-y-1 text-sm py-2 px-3 bg-muted rounded-md">
+                          <div className="flex justify-between items-center">
+                            <span>{format(new Date(payment.date), "d MMM yyyy", { locale: es })}</span>
+                            <span className="font-medium text-green-600 dark:text-green-400">
+                              +${payment.amount.toFixed(2)}
+                            </span>
+                          </div>
+
+
+                          <div className="text-xs text-muted-foreground">
+                            {payment.items && payment.items.length > 0 ? (
+                              <div className="flex flex-col gap-1 mt-1">
+                                {payment.items.map((item: any, idx: number) => (
+                                  <span key={idx} className="flex justify-between">
+                                    <span>• {item.quantity}x {item.name}</span>
+
+                                  </span>
+                                ))}
+                                {payment.notes && <span className="italic mt-1 border-t pt-1">Nota: "{payment.notes}"</span>}
+                              </div>
+                            ) : (
+                              <div className="flex justify-between items-center">
+                                <span className="capitalize">{payment.method}</span>
+                                {payment.notes && <span className="italic max-w-[200px] truncate">"{payment.notes}"</span>}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex justify-between items-center text-muted-foreground text-xs">
-                          <span className="capitalize">{payment.method}</span>
-                          {payment.notes && <span className="italic max-w-[200px] truncate">"{payment.notes}"</span>}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

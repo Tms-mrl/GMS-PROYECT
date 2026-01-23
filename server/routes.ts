@@ -67,33 +67,35 @@ export async function registerRoutes(server: Server, app: Express) {
   app.get("/api/payments", async (req, res) => { try { const u = await getUserId(req); res.json(await storage.getPaymentsWithOrders(u)); } catch (e) { res.status(500).json({ error: "Error" }); } });
   app.post("/api/payments", async (req, res) => {
     try {
-      // 1. Validamos con tu nuevo schema (que incluye 'items')
+      // 1. Validamos con tu nuevo schema
       const p = insertPaymentSchema.safeParse(req.body);
 
       if (!p.success) {
-        // Tip: Esto te ayuda a ver en la consola qué campo falló si el frontend manda algo mal
         console.log("Error de validación:", p.error.errors);
         return res.status(400).json({ error: p.error.errors });
       }
 
       const u = await getUserId(req);
 
-      // 2. Mapeamos los datos para Supabase
+      // 2. Mapeamos los datos para Storage
       const paymentData = {
         amount: p.data.amount,
         method: p.data.method,
         notes: p.data.notes,
-        order_id: p.data.orderId || null, // Nota snake_case si tu DB es order_id
+        orderId: p.data.orderId || undefined, // Nota: Storage suele esperar camelCase en la interfaz, el mapeo a snake_case lo hace dentro
 
-        // EL PUENTE IMPORTANTE:
-        // Tomamos 'items' del schema validado y lo guardamos en 'cart_items' de la DB
-        cart_items: p.data.items || [],
+        // --- LA CORRECCIÓN CLAVE ---
+        // Debemos llamarlo 'items' para que storage.createPayment lo reconozca
+        // y ejecute la lógica de descontar deuda y stock.
+        items: p.data.items || [],
 
-        user_id: u
+        userId: u
       };
 
       // 3. Guardar en DB
+      // Usamos 'as any' porque estamos construyendo el objeto manualmente y a veces TS se queja
       const result = await storage.createPayment(paymentData as any);
+
       res.status(201).json(result);
 
     } catch (e) {

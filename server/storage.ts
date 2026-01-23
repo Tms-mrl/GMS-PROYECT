@@ -164,8 +164,49 @@ export class SupabaseStorage implements IStorage {
   private mapUser(row: any): User { return { id: row.id, username: row.username }; }
   private mapClient(row: any): Client { return { id: row.id, userId: row.user_id, name: row.name, dni: row.dni, address: row.address, phone: row.phone, email: row.email, whoPicksUp: row.who_picks_up, notes: row.notes }; }
   private mapDevice(row: any): Device { return { id: row.id, userId: row.user_id, clientId: row.client_id, brand: row.brand, model: row.model, imei: row.imei, serialNumber: row.serial_number, color: row.color, condition: row.condition, lockType: row.lock_type, lockValue: row.lock_value }; }
-  private mapOrder(row: any): RepairOrder { return { id: row.id, userId: row.user_id, clientId: row.client_id, deviceId: row.device_id, status: row.status, problem: row.problem, diagnosis: row.diagnosis, solution: row.solution, technicianName: row.technician_name, estimatedCost: Number(row.estimated_cost), finalCost: Number(row.final_cost), createdAt: row.created_at, estimatedDate: row.estimated_date, completedAt: row.completed_at, deliveredAt: row.delivered_at, priority: row.priority, notes: row.notes, intakeChecklist: row.intake_checklist || {} }; }
-  private mapPayment(row: any): Payment { return { id: row.id, userId: row.user_id, orderId: row.order_id, amount: Number(row.amount), method: row.method, date: row.date, notes: row.notes, items: row.items }; }
+  private mapOrder(row: any): RepairOrder {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      clientId: row.client_id,
+      deviceId: row.device_id,
+      status: row.status,
+      problem: row.problem,
+      diagnosis: row.diagnosis,
+      solution: row.solution,
+
+      // --- CORRECCIONES CLAVE AQUI ---
+      // Lado Izquierdo: camelCase (Lo que espera tu App)
+      // Lado Derecho: snake_case (Lo que viene de la DB)
+      technicianName: row.technician_name,
+      estimatedCost: Number(row.estimated_cost),
+      finalCost: Number(row.final_cost),
+      estimatedDate: row.estimated_date,
+      // -------------------------------
+
+      createdAt: row.created_at,
+      completedAt: row.completed_at,
+      deliveredAt: row.delivered_at,
+      priority: row.priority,
+      notes: row.notes,
+      intakeChecklist: row.intake_checklist || {}
+    };
+  }
+  // En server/storage.ts
+  private mapPayment(row: any): Payment {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      orderId: row.order_id,
+      amount: Number(row.amount),
+      method: row.method,
+      date: row.date,
+      notes: row.notes,
+
+      // CAMBIO IMPORTANTE: Leemos de 'cart_items', no de 'items'
+      items: row.cart_items || row.items || []
+    };
+  }
   private mapSettings(row: any): BusinessSettings { return { id: row.id, userId: row.user_id, businessName: row.business_name, address: row.address, phone: row.phone, email: row.email, website: row.website, taxId: row.tax_id, logoUrl: row.logo_url, termsAndConditions: row.terms_and_conditions }; }
   private mapProduct(row: any): Product { return { id: row.id, userId: row.user_id, name: row.name, description: row.description, sku: row.sku, quantity: row.quantity, price: Number(row.price), cost: Number(row.cost), category: row.category, lowStockThreshold: row.low_stock_threshold }; }
 
@@ -196,8 +237,62 @@ export class SupabaseStorage implements IStorage {
     return { ...order, client: client!, device: device!, payments };
   }
 
-  async createOrder(order: InsertRepairOrder): Promise<RepairOrder> { const dbOrder = { user_id: (order as any).userId || (order as any).user_id, client_id: order.clientId, device_id: order.deviceId, status: order.status, problem: order.problem, diagnosis: order.diagnosis, solution: order.solution, technician_name: order.technicianName, estimated_cost: order.estimatedCost, final_cost: order.finalCost, estimated_date: order.estimatedDate, priority: order.priority, notes: order.notes, intake_checklist: order.intakeChecklist }; const { data, error } = await this.client.from("repair_orders").insert(dbOrder).select().single(); if (error) throw error; return this.mapOrder(data); }
-  async updateOrder(id: string, updates: Partial<RepairOrder>): Promise<RepairOrder | undefined> { const dbUpdates: any = {}; if (updates.status) dbUpdates.status = updates.status; if (updates.problem) dbUpdates.problem = updates.problem; if (updates.diagnosis) dbUpdates.diagnosis = updates.diagnosis; if (updates.solution) dbUpdates.solution = updates.solution; if (updates.technicianName) dbUpdates.technician_name = updates.technicianName; if (updates.estimatedCost !== undefined) dbUpdates.estimated_cost = updates.estimatedCost; if (updates.finalCost !== undefined) dbUpdates.final_cost = updates.finalCost; if (updates.estimatedDate) dbUpdates.estimated_date = updates.estimatedDate; if (updates.priority) dbUpdates.priority = updates.priority; if (updates.notes) dbUpdates.notes = updates.notes; if (updates.status === "listo") dbUpdates.completed_at = new Date().toISOString(); if (updates.status === "entregado") dbUpdates.delivered_at = new Date().toISOString(); if (updates.intakeChecklist) dbUpdates.intake_checklist = updates.intakeChecklist; const { data, error } = await this.client.from("repair_orders").update(dbUpdates).eq("id", id).select().single(); if (error || !data) return undefined; return this.mapOrder(data); }
+  async createOrder(order: InsertRepairOrder): Promise<RepairOrder> {
+    const input = order as any;
+    const dbOrder = {
+      // Eliminamos 'this.DEMO_USER_ID' que no existe aquí
+      user_id: input.userId || input.user_id,
+      client_id: input.clientId || input.client_id,
+      device_id: input.deviceId || input.device_id,
+      status: input.status,
+      problem: input.problem,
+      diagnosis: input.diagnosis,
+      solution: input.solution,
+      technician_name: input.technicianName || input.technician_name,
+
+      // Costos blindados:
+      estimated_cost: input.estimatedCost ?? input.estimated_cost ?? 0,
+      final_cost: input.finalCost ?? input.final_cost ?? 0,
+
+      estimated_date: input.estimatedDate || input.estimated_date,
+      priority: input.priority,
+      notes: input.notes,
+      intake_checklist: input.intakeChecklist || input.intake_checklist || {}
+    };
+
+    const { data, error } = await this.client.from("repair_orders").insert(dbOrder).select().single();
+    if (error) throw error;
+    return this.mapOrder(data);
+  }
+
+  async updateOrder(id: string, updates: Partial<RepairOrder>): Promise<RepairOrder | undefined> {
+    const input = updates as any;
+    const dbUpdates: any = {};
+
+    if (input.status) dbUpdates.status = input.status;
+    if (input.problem) dbUpdates.problem = input.problem;
+    if (input.diagnosis) dbUpdates.diagnosis = input.diagnosis;
+    if (input.solution) dbUpdates.solution = input.solution;
+    if (input.technicianName !== undefined) dbUpdates.technician_name = input.technicianName;
+
+    // LOGICA BILINGÜE PARA COSTOS:
+    if (input.estimatedCost !== undefined) dbUpdates.estimated_cost = input.estimatedCost;
+    else if (input.estimated_cost !== undefined) dbUpdates.estimated_cost = input.estimated_cost;
+
+    if (input.finalCost !== undefined) dbUpdates.final_cost = input.finalCost;
+    else if (input.final_cost !== undefined) dbUpdates.final_cost = input.final_cost;
+
+    if (input.estimatedDate !== undefined) dbUpdates.estimated_date = input.estimatedDate;
+    if (input.priority) dbUpdates.priority = input.priority;
+    if (input.notes) dbUpdates.notes = input.notes;
+    if (input.status === "listo") dbUpdates.completed_at = new Date().toISOString();
+    if (input.status === "entregado") dbUpdates.delivered_at = new Date().toISOString();
+    if (input.intakeChecklist) dbUpdates.intake_checklist = input.intakeChecklist;
+
+    const { data, error } = await this.client.from("repair_orders").update(dbUpdates).eq("id", id).select().single();
+    if (error || !data) return undefined;
+    return this.mapOrder(data);
+  }
 
   async getPayments(currentUserId: string): Promise<Payment[]> {
     const { data, error } = await this.client.from("payments").select("*").eq("user_id", currentUserId).order("date", { ascending: false });
@@ -212,8 +307,10 @@ export class SupabaseStorage implements IStorage {
       return { ...payment, order };
     }));
   }
+
+  // --- FUNCIÓN MODIFICADA ---
   async createPayment(insertPayment: InsertPayment): Promise<Payment> {
-    // 1. Validate Stock for all items FIRST (Strict Validation)
+    // 1. Validar Stock
     if (insertPayment.items) {
       for (const item of insertPayment.items) {
         if (item.type === "product" && item.id) {
@@ -224,45 +321,43 @@ export class SupabaseStorage implements IStorage {
           }
         }
       }
+    }
 
-      // 2. If valid, Process Items
+    // 2. DETECTAR ORDEN (Nuevo lógica para que baje el saldo)
+    // Si no viene orderId, buscamos en los items a ver si hay una reparación
+    let targetOrderId = insertPayment.orderId || null;
+    if (!targetOrderId && insertPayment.items) {
+      const repairItem = insertPayment.items.find(i => i.type === 'repair' && i.id);
+      if (repairItem) {
+        targetOrderId = repairItem.id || null;
+      }
+    }
+
+    // 3. Procesar Items (Solo descontar stock de productos)
+    // YA NO cambiamos el estado de la reparación a entregado
+    if (insertPayment.items) {
       for (const item of insertPayment.items) {
-        // Product: Deduct Stock
         if (item.type === "product" && item.id) {
           const product = await this.getProduct(item.id);
           if (product) {
             await this.updateProduct(item.id, { quantity: product.quantity - item.quantity });
           }
         }
-        // Repair: Update Order Status
-        if (item.type === "repair" && item.id) {
-          const order = await this.client.from("repair_orders").select("status").eq("id", item.id).single();
-          // If order exists and is ready (or any status really, but usually 'listo'), mark as 'entregado' (delivered/paid)
-          // or at least ensure it's marked as paid/completed if logic dictates.
-          // User request: "actualizar el estado... (por ejemplo, marcarla como 'Pagada' o actualizar su saldo pendiente)"
-          // User example: "set status to 'entregado' if currently 'listo'"
-          // I will set it to 'entregado' as it implies the customer paid and took it, or simply paid.
-          // Let's stick to 'entregado' if it's a repair pickup.
-          await this.client.from("repair_orders").update({ status: "entregado", delivered_at: new Date().toISOString() }).eq("id", item.id);
-        }
       }
     }
 
-    const { data: userData } = await this.client.auth.getUser(); // or rely on passed user_id? 
-    // Wait, insertPayment has userId usually or we use getUserId from route. schema says userId is in Payment interface but InsertPayment doesn't have it explicitly forced, 
-    // routes.ts passes `{ ...p.data, userId: u, user_id: u }`.
-    // So `insertPayment` argument here actually HAS userId mixed in (as `any` cast in routes.ts).
-    // Let's access it safely.
+    const { data: userData } = await this.client.auth.getUser();
     const userId = (insertPayment as any).userId || (insertPayment as any).user_id;
 
     const dbPayment = {
       user_id: userId,
-      order_id: insertPayment.orderId || null,
+      order_id: targetOrderId, // Usamos el ID detectado
       amount: insertPayment.amount,
       method: insertPayment.method,
       notes: insertPayment.notes,
-      items: insertPayment.items // JSONB column
+      cart_items: insertPayment.items // Mapeo correcto para la DB
     };
+
     const { data, error } = await this.client.from("payments").insert(dbPayment).select().single();
     if (error) throw error;
     return this.mapPayment(data);

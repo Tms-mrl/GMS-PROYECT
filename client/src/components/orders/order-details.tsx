@@ -16,7 +16,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { OrderFormValues } from "./schemas";
+import { OrderFormValues } from "./schemas"; // Asegúrate que la ruta a schemas sea correcta
 
 interface OrderDetailsProps {
     form: UseFormReturn<OrderFormValues>;

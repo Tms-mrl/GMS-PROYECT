@@ -64,7 +64,7 @@ export function PaymentDialog({
             if (defaultOrderId) {
                 setSelectedOrderId(defaultOrderId);
             }
-            setAmount("");
+            // No reseteamos amount aquí para permitir que el useEffect de abajo calcule el saldo
             setMethod("efectivo");
             setNotes("");
         }
@@ -77,8 +77,6 @@ export function PaymentDialog({
     const estimated = selectedOrder?.estimatedCost ?? 0;
     const final = selectedOrder?.finalCost ?? 0;
 
-    // Use final cost if > 0, otherwise estimated cost
-    // If both are 0 (or falsy), cost is not defined.
     const totalCost = final > 0 ? final : estimated;
     const isCostDefined = totalCost > 0;
 
@@ -86,25 +84,30 @@ export function PaymentDialog({
 
     // Auto-fill amount when order changes
     useEffect(() => {
-        if (selectedOrder && isCostDefined) {
-            // Auto fill with pending balance if > 0
+        if (open && selectedOrder && isCostDefined) {
             if (pendingBalance > 0) {
                 setAmount(pendingBalance.toFixed(2));
             } else {
                 setAmount("");
             }
         }
-    }, [selectedOrderId, isCostDefined, pendingBalance]); // intent: run when order selection logic resolves
+    }, [selectedOrderId, isCostDefined, pendingBalance, open]);
 
+    // --- CAMBIO CLAVE AQUÍ ---
+    // Actualizamos la mutación para que acepte 'items'
     const createPayment = useMutation({
-        mutationFn: async (data: { orderId: string; amount: number; method: PaymentMethod; notes: string }) => {
+        mutationFn: async (data: {
+            amount: number;
+            method: PaymentMethod;
+            notes: string;
+            items: any[] // Enviamos el array de items
+        }) => {
             const res = await apiRequest("POST", "/api/payments", data);
             return res.json();
         },
         onSuccess: () => {
-            // Invalidate all relevant queries
             queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); // covers lists and details if key matches prefix
+            queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
             if (selectedOrderId) {
                 queryClient.invalidateQueries({ queryKey: ["/api/orders", selectedOrderId] });
             }
@@ -121,7 +124,7 @@ export function PaymentDialog({
     });
 
     const handleSubmit = () => {
-        if (!selectedOrderId || !amount) return;
+        if (!selectedOrderId || !amount || !selectedOrder) return;
 
         const amountNum = parseFloat(amount);
 
@@ -130,7 +133,7 @@ export function PaymentDialog({
             return;
         }
 
-        if (amountNum > pendingBalance + 0.01) { // small epsilon for float comparison safety
+        if (amountNum > pendingBalance + 0.01) {
             toast({
                 title: "El monto excede el saldo pendiente",
                 description: `Saldo pendiente: $${pendingBalance.toFixed(2)}`,
@@ -139,27 +142,24 @@ export function PaymentDialog({
             return;
         }
 
+        // --- LA MAGIA: Construimos un item de reparación ---
+        // Esto le dice al backend que este pago pertenece a esta reparación
+        const repairItem = {
+            type: "repair",
+            id: selectedOrder.id,
+            name: `Reparación ${selectedOrder.device.brand} ${selectedOrder.device.model}`,
+            quantity: 1,
+            price: amountNum // El precio del item es lo que está pagando
+        };
+
         createPayment.mutate({
-            orderId: selectedOrderId,
             amount: amountNum,
             method,
             notes,
+            items: [repairItem] // <--- Enviamos como array
         });
     };
 
-    // Filter orders for the dropdown: usually we want to show all workable orders, 
-    // or maybe just the pending ones? 
-    // Requirement: "Register Payment" modal improvements -> "When selecting an order..."
-    // It implies we should be able to select any order? Or usually just ones with debt.
-    // Existing logic in payments.tsx filtered by "pending > 0".
-    // However, sometimes you might want to add a payment even if balance is 0 (e.g. extra tip, or correction? Unlikely for this app constraints).
-    // Let's stick to showing all orders but indicating balance, or filter by pending?
-    // Let's filter by: not delivered OR has debt. 
-    // Actually, simplest is to show all active orders or orders with debt.
-    // Let's use the same filter as the original page: "pending > totalPaid && status !== delivered"
-    // BUT the requirements say: "App must continue working even if an order has no payments yet".
-    // Let's show all orders sorted by date descending, maybe filter out "Entregado" AND "Fully Paid" to keep list clean?
-    // For now, I will list all orders to be safe, but sort them.
     const sortedOrders = orders?.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return (
@@ -175,9 +175,7 @@ export function PaymentDialog({
                         <Select
                             value={selectedOrderId}
                             onValueChange={setSelectedOrderId}
-                            disabled={!!defaultOrderId} // If passed from details, lock it? Or allow change?
-                        // User requirement: "Register Payment button directly inside Order Detail"
-                        // Usually implies context is fixed. I'll disable if defaultOrderId is set.
+                            disabled={!!defaultOrderId}
                         >
                             <SelectTrigger>
                                 <SelectValue placeholder="Selecciona una orden" />
