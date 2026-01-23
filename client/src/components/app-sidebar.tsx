@@ -9,7 +9,8 @@ import {
   Wrench,
   Search,
   HelpCircle,
-  Package
+  Package,
+  Settings
 } from "lucide-react";
 import {
   Sidebar,
@@ -57,6 +58,11 @@ const menuItems = [
     title: "Reportes",
     url: "/reportes",
     icon: BarChart3,
+  },
+  {
+    title: "Configuración",
+    url: "/configuracion",
+    icon: Settings,
   },
 ];
 

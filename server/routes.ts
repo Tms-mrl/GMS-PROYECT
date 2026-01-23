@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { type Server } from "http";
 import { storage } from "./storage";
-import { insertRepairOrderSchema, insertClientSchema, insertDeviceSchema, insertPaymentSchema, insertSettingsSchema, insertProductSchema } from "@shared/schema";
+import { insertRepairOrderSchema, insertClientSchema, insertDeviceSchema, insertPaymentSchema, insertSettingsSchema, insertProductSchema, insertExpenseSchema } from "@shared/schema";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -103,6 +103,10 @@ export async function registerRoutes(server: Server, app: Express) {
       res.status(500).json({ error: "Error interno del servidor" });
     }
   });
+
+  // EXPENSES
+  app.get("/api/expenses", async (req, res) => { try { const u = await getUserId(req); res.json(await storage.getExpenses(u)); } catch (e) { res.status(500).json({ error: "Error" }); } });
+  app.post("/api/expenses", async (req, res) => { try { const p = insertExpenseSchema.safeParse(req.body); if (!p.success) return res.status(400).json({ error: p.error.errors }); const u = await getUserId(req); res.status(201).json(await storage.createExpense({ ...p.data, userId: u, user_id: u } as any)); } catch (e) { res.status(500).json({ error: "Error" }); } });
 
   // STATS
   app.get("/api/stats", async (req, res) => { try { const u = await getUserId(req); res.json(await storage.getStats(u)); } catch (e) { res.status(500).json({ error: "Error" }); } });

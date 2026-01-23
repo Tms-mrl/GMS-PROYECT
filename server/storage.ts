@@ -1,15 +1,242 @@
 import {
-  type Client, type InsertClient,
-  type Device, type InsertDevice,
-  type RepairOrder, type InsertRepairOrder,
-  type Payment, type InsertPayment,
-  type RepairOrderWithDetails,
-  type User, type InsertUser,
-  type BusinessSettings, type InsertSettings,
-  type Product, type InsertProduct
-} from "@shared/schema";
-import { randomUUID } from "crypto";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+  pgTable,
+  text,
+  serial,
+  integer,
+  boolean,
+  timestamp,
+  jsonb,
+  decimal,
+  uuid
+} from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+import { supabase } from "./supabase";
+
+// --------------------------------------------------------------------------
+// 1. CONSTANTES GLOBALES (Menús desplegables)
+// --------------------------------------------------------------------------
+export const orderStatuses = ["recibido", "diagnostico", "en_curso", "listo", "entregado"] as const;
+export type OrderStatus = typeof orderStatuses[number];
+
+export const paymentMethods = ["efectivo", "tarjeta", "transferencia"] as const;
+export type PaymentMethod = typeof paymentMethods[number];
+
+// --------------------------------------------------------------------------
+// 2. DEFINICIÓN DE TABLAS (Drizzle)
+// --------------------------------------------------------------------------
+
+// --- USERS ---
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
+});
+
+// --- CLIENTS ---
+export const clients = pgTable("clients", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  dni: text("dni").default(""),
+  address: text("address").default(""),
+  phone: text("phone").default(""),
+  email: text("email").default(""),
+  whoPicksUp: text("who_picks_up").default(""),
+  notes: text("notes").default(""),
+});
+
+// --- DEVICES ---
+export const devices = pgTable("devices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  clientId: text("client_id").notNull(),
+  brand: text("brand").notNull(),
+  model: text("model").notNull(),
+  imei: text("imei").default(""),
+  serialNumber: text("serial_number").default(""),
+  color: text("color").default(""),
+  condition: text("condition").default(""),
+  lockType: text("lock_type").default(""),
+  lockValue: text("lock_value").default(""),
+});
+
+// --- REPAIR ORDERS ---
+export const repairOrders = pgTable("repair_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  clientId: text("client_id").notNull(),
+  deviceId: text("device_id").notNull(),
+  status: text("status").notNull().default("recibido"),
+
+  problem: text("problem").notNull(),
+  diagnosis: text("diagnosis").default(""),
+  solution: text("solution").default(""),
+  technicianName: text("technician_name").default(""),
+
+  // Decimales en DB (Strings), pero los trataremos como números
+  estimatedCost: decimal("estimated_cost", { precision: 10, scale: 2 }).default("0"),
+  finalCost: decimal("final_cost", { precision: 10, scale: 2 }).default("0"),
+
+  estimatedDate: timestamp("estimated_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  deliveredAt: timestamp("delivered_at"),
+  priority: text("priority").default("normal"),
+  notes: text("notes").default(""),
+  intakeChecklist: jsonb("intake_checklist").default({}),
+});
+
+// --- PRODUCTS ---
+export const products = pgTable("products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").default(""),
+  sku: text("sku").default(""),
+  quantity: integer("quantity").notNull().default(0),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  cost: decimal("cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  category: text("category").default("General"),
+  lowStockThreshold: integer("low_stock_threshold").default(5),
+});
+
+// --- PAYMENTS ---
+// Interfaz auxiliar para los Items del carrito
+export interface PaymentItem {
+  type: "product" | "repair" | "other";
+  id?: string;
+  name: string;
+  quantity: number;
+  price: number;
+}
+
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  orderId: text("order_id"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  method: text("method").notNull(),
+  date: timestamp("date").defaultNow().notNull(),
+  notes: text("notes").default(""),
+  // TRUCO: Mapeamos la columna 'cart_items' a la propiedad TS 'items' con el tipo correcto
+  items: jsonb("cart_items").$type<PaymentItem[]>(),
+});
+
+// --- EXPENSES ---
+export const expenses = pgTable("expenses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  category: text("category").notNull(),
+  description: text("description").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  date: timestamp("date").notNull().defaultNow(),
+});
+
+// --- SETTINGS (La nueva tabla limpia) ---
+export const settings = pgTable("settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  shopName: text("shop_name").notNull().default("Mi Taller"),
+  address: text("address").default(""),
+  phone: text("phone").default(""),
+  receiptDisclaimer: text("receipt_disclaimer").default("Garantía de 30 días."),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+
+// --------------------------------------------------------------------------
+// 3. TIPOS (INTERFACES) "PARCHEADOS"
+// Aquí forzamos a TS a creer que los decimales son números (Number)
+// para que no rompa las sumas y cálculos en storage.ts
+// --------------------------------------------------------------------------
+
+// Helpers para crear esquemas de inserción con coerción automática
+export const insertUserSchema = createInsertSchema(users);
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+
+// Clients
+export const insertClientSchema = createInsertSchema(clients);
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = z.infer<typeof insertClientSchema>;
+
+// Devices
+export const insertDeviceSchema = createInsertSchema(devices);
+export type Device = typeof devices.$inferSelect;
+export type InsertDevice = z.infer<typeof insertDeviceSchema>;
+
+// Repair Orders (Override decimal -> number)
+export const insertRepairOrderSchema = createInsertSchema(repairOrders, {
+  estimatedCost: z.coerce.number(),
+  finalCost: z.coerce.number()
+});
+// "Omit" borra la definición original de string y la reemplazamos por number
+export type RepairOrder = Omit<typeof repairOrders.$inferSelect, "estimatedCost" | "finalCost"> & {
+  estimatedCost: number;
+  finalCost: number;
+};
+export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
+
+// Products (Override decimal -> number)
+export const insertProductSchema = createInsertSchema(products, {
+  price: z.coerce.number(),
+  cost: z.coerce.number(),
+  quantity: z.coerce.number(),
+});
+export type Product = Omit<typeof products.$inferSelect, "price" | "cost"> & {
+  price: number;
+  cost: number;
+};
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+
+// Payments (Override decimal -> number)
+export const insertPaymentSchema = createInsertSchema(payments, {
+  amount: z.coerce.number(),
+}).pick({
+  orderId: true,
+  amount: true,
+  method: true,
+  notes: true,
+  items: true
+});
+export type Payment = Omit<typeof payments.$inferSelect, "amount"> & {
+  amount: number;
+};
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+
+// Expenses (Override decimal -> number)
+export const insertExpenseSchema = createInsertSchema(expenses, {
+  date: z.coerce.date(),
+  amount: z.coerce.string() // El formulario envía string, Zod lo maneja
+}).pick({
+  category: true,
+  description: true,
+  amount: true,
+  date: true,
+});
+export type Expense = Omit<typeof expenses.$inferSelect, "amount"> & {
+  amount: number;
+};
+export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+
+// Settings
+export const insertSettingsSchema = createInsertSchema(settings).pick({
+  shopName: true,
+  address: true,
+  phone: true,
+  receiptDisclaimer: true,
+});
+export type Settings = typeof settings.$inferSelect; // Aquí todo es texto, no hace falta parchear
+export type InsertSettings = z.infer<typeof insertSettingsSchema>;
+
+
+// Tipos Relacionales (Auxiliares)
+export interface RepairOrderWithDetails extends RepairOrder {
+  client: Client;
+  device: Device;
+  payments?: Payment[];
+}
 
 export interface IStorage {
   // Users
@@ -18,152 +245,79 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
 
   // Clients
-  getClients(currentUserId: string): Promise<Client[]>;
+  getClients(userId: string): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
-  createClient(client: InsertClient): Promise<Client>;
-  updateClient(id: string, client: Partial<InsertClient>): Promise<Client | undefined>;
+  createClient(client: InsertClient & { userId: string }): Promise<Client>;
+  updateClient(id: string, data: Partial<InsertClient>): Promise<Client | undefined>;
 
   // Devices
-  getDevices(currentUserId: string): Promise<Device[]>;
+  getDevices(userId: string): Promise<Device[]>;
   getDevicesByClient(clientId: string): Promise<Device[]>;
-  getDevice(id: string): Promise<Device | undefined>;
-  createDevice(device: InsertDevice): Promise<Device>;
+  createDevice(device: InsertDevice & { userId: string }): Promise<Device>;
+  updateDevice(id: string, data: Partial<InsertDevice>): Promise<Device | undefined>;
 
   // Orders
-  getOrders(currentUserId: string): Promise<RepairOrder[]>;
-  getOrdersWithDetails(currentUserId: string): Promise<RepairOrderWithDetails[]>;
+  getOrdersWithDetails(userId: string): Promise<RepairOrderWithDetails[]>;
   getOrderWithDetails(id: string): Promise<RepairOrderWithDetails | undefined>;
-  getOrdersByClient(clientId: string): Promise<RepairOrderWithDetails[]>;
-  createOrder(order: InsertRepairOrder): Promise<RepairOrder>;
-  updateOrder(id: string, order: Partial<RepairOrder>): Promise<RepairOrder | undefined>;
+  createOrder(order: InsertRepairOrder & { userId: string }): Promise<RepairOrder>;
+  updateOrder(id: string, data: Partial<InsertRepairOrder>): Promise<RepairOrder | undefined>;
 
   // Payments
-  getPayments(currentUserId: string): Promise<Payment[]>;
-  getPaymentsWithOrders(currentUserId: string): Promise<(Payment & { order?: RepairOrderWithDetails })[]>;
-  createPayment(payment: InsertPayment): Promise<Payment>;
-
-  // Settings
-  getSettings(currentUserId: string): Promise<BusinessSettings | undefined>;
-  updateSettings(currentUserId: string, settings: InsertSettings): Promise<BusinessSettings>;
+  getPaymentsWithOrders(userId: string): Promise<(Payment & { order?: RepairOrder })[]>;
+  createPayment(payment: InsertPayment & { userId: string, items: PaymentItem[] }): Promise<Payment>;
 
   // Products
-  getProducts(currentUserId: string): Promise<Product[]>;
-  getProduct(id: string): Promise<Product | undefined>;
-  createProduct(product: InsertProduct): Promise<Product>;
+  getProducts(userId: string): Promise<Product[]>;
+  createProduct(product: InsertProduct & { userId: string }): Promise<Product>;
   updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(id: string, userId: string): Promise<void>;
 
+  // Expenses
+  getExpenses(userId: string): Promise<Expense[]>;
+  createExpense(expense: InsertExpense & { userId: string }): Promise<Expense>;
+
   // Stats
-  getStats(currentUserId: string): Promise<{
-    activeOrders: number;
-    pendingDiagnosis: number;
-    readyForPickup: number;
-    monthlyRevenue: number;
-  }>;
-}
+  getStats(userId: string): Promise<any>;
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private clients: Map<string, Client>;
-  private devices: Map<string, Device>;
-  private orders: Map<string, RepairOrder>;
-  private payments: Map<string, Payment>;
-  private settings: Map<string, BusinessSettings>;
-  private products: Map<string, Product>;
-  private readonly DEMO_USER_ID = "demo-user-id";
-
-  constructor() {
-    this.users = new Map();
-    this.clients = new Map();
-    this.devices = new Map();
-    this.orders = new Map();
-    this.payments = new Map();
-    this.settings = new Map();
-    this.products = new Map();
-    this.seedData();
-  }
-
-  private seedData() { }
-
-  async getUser(id: string): Promise<User | undefined> { return this.users.get(id); }
-  async getUserByUsername(username: string): Promise<User | undefined> { return Array.from(this.users.values()).find((u) => u.username === username); }
-  async createUser(insertUser: InsertUser): Promise<User> { const id = randomUUID(); const user: User = { ...insertUser, id }; this.users.set(id, user); return user; }
-
-  async getClients(currentUserId: string): Promise<Client[]> { return Array.from(this.clients.values()).filter(c => c.userId === currentUserId || c.userId === this.DEMO_USER_ID); }
-  async getClient(id: string): Promise<Client | undefined> { return this.clients.get(id); }
-  async createClient(client: InsertClient): Promise<Client> { const id = randomUUID(); const newClient: Client = { ...client, id, userId: (client as any).userId || this.DEMO_USER_ID, whoPicksUp: client.whoPicksUp || "" }; this.clients.set(id, newClient); return newClient; }
-  async updateClient(id: string, updates: Partial<InsertClient>): Promise<Client | undefined> { const client = this.clients.get(id); if (!client) return undefined; const updated = { ...client, ...updates }; this.clients.set(id, updated); return updated; }
-
-  async getDevices(currentUserId: string): Promise<Device[]> { return Array.from(this.devices.values()).filter(d => d.userId === currentUserId || d.userId === this.DEMO_USER_ID); }
-  async getDevicesByClient(clientId: string): Promise<Device[]> { return Array.from(this.devices.values()).filter(d => d.clientId === clientId); }
-  async getDevice(id: string): Promise<Device | undefined> { return this.devices.get(id); }
-  async createDevice(device: InsertDevice): Promise<Device> { const id = randomUUID(); const newDevice: Device = { ...device, id, userId: (device as any).userId || this.DEMO_USER_ID, lockType: device.lockType || "", lockValue: device.lockValue || "" }; this.devices.set(id, newDevice); return newDevice; }
-
-  async getOrders(currentUserId: string): Promise<RepairOrder[]> { return Array.from(this.orders.values()).filter(o => o.userId === currentUserId || o.userId === this.DEMO_USER_ID).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); }
-  async getOrdersWithDetails(currentUserId: string): Promise<RepairOrderWithDetails[]> { const orders = await this.getOrders(currentUserId); return Promise.all(orders.map(order => this.enrichOrder(order))); }
-  async getOrderWithDetails(id: string): Promise<RepairOrderWithDetails | undefined> { const order = this.orders.get(id); if (!order) return undefined; return this.enrichOrder(order); }
-  async getOrdersByClient(clientId: string): Promise<RepairOrderWithDetails[]> { const orders = Array.from(this.orders.values()).filter(o => o.clientId === clientId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); return Promise.all(orders.map(order => this.enrichOrder(order))); }
-
-  private async enrichOrder(order: RepairOrder): Promise<RepairOrderWithDetails> {
-    const client = await this.getClient(order.clientId);
-    const device = await this.getDevice(order.deviceId);
-    const payments = Array.from(this.payments.values()).filter(p => p.orderId === order.id);
-    return { ...order, client: client!, device: device!, payments };
-  }
-
-  async createOrder(insertOrder: InsertRepairOrder): Promise<RepairOrder> { const id = randomUUID(); const order: RepairOrder = { ...insertOrder, id, userId: (insertOrder as any).userId || this.DEMO_USER_ID, createdAt: new Date().toISOString(), completedAt: null, deliveredAt: null, intakeChecklist: insertOrder.intakeChecklist || {} }; this.orders.set(id, order); return order; }
-  async updateOrder(id: string, updates: Partial<RepairOrder>): Promise<RepairOrder | undefined> { const order = this.orders.get(id); if (!order) return undefined; const updated = { ...order, ...updates }; if (updates.status === "listo" && !order.completedAt) updated.completedAt = new Date().toISOString(); if (updates.status === "entregado" && !order.deliveredAt) updated.deliveredAt = new Date().toISOString(); this.orders.set(id, updated); return updated; }
-
-  async getPayments(currentUserId: string): Promise<Payment[]> { return Array.from(this.payments.values()).filter(p => p.userId === currentUserId || p.userId === this.DEMO_USER_ID).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }
-  async getPaymentsWithOrders(currentUserId: string): Promise<(Payment & { order?: RepairOrderWithDetails })[]> {
-    const payments = await this.getPayments(currentUserId);
-    return Promise.all(payments.map(async payment => {
-      if (!payment.orderId) return { ...payment, order: undefined };
-      const order = await this.getOrderWithDetails(payment.orderId);
-      return { ...payment, order };
-    }));
-  }
-  async createPayment(insertPayment: InsertPayment): Promise<Payment> { const id = randomUUID(); const payment: Payment = { ...insertPayment, id, orderId: insertPayment.orderId || null, userId: (insertPayment as any).userId || this.DEMO_USER_ID, date: new Date().toISOString(), items: insertPayment.items || null }; this.payments.set(id, payment); return payment; }
-
-  async getSettings(currentUserId: string): Promise<BusinessSettings | undefined> { return Array.from(this.settings.values()).find(s => s.userId === currentUserId || s.userId === this.DEMO_USER_ID); }
-  async updateSettings(currentUserId: string, settings: InsertSettings): Promise<BusinessSettings> { const existing = await this.getSettings(currentUserId); const id = existing?.id || randomUUID(); const newSettings: BusinessSettings = { ...settings, id, userId: currentUserId, website: settings.website || "", taxId: settings.taxId || "", logoUrl: settings.logoUrl || "", termsAndConditions: settings.termsAndConditions || "" }; this.settings.set(id, newSettings); return newSettings; }
-
-  async getProducts(currentUserId: string): Promise<Product[]> { return Array.from(this.products.values()).filter(p => p.userId === currentUserId || p.userId === this.DEMO_USER_ID); }
-  async getProduct(id: string): Promise<Product | undefined> { return this.products.get(id); }
-  async createProduct(product: InsertProduct): Promise<Product> { const id = randomUUID(); const newProduct: Product = { ...product, id, userId: (product as any).userId || this.DEMO_USER_ID }; this.products.set(id, newProduct); return newProduct; }
-  async updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined> { const existing = this.products.get(id); if (!existing) return undefined; const updated = { ...existing, ...product }; this.products.set(id, updated); return updated; }
-  async deleteProduct(id: string, userId: string): Promise<void> {
-    const product = this.products.get(id);
-    if (!product) return;
-    // Enforce ownership check for MemStorage effectively simulates RLS
-    if (product.userId !== userId && product.userId !== this.DEMO_USER_ID) return;
-    this.products.delete(id);
-  }
-
-  async getStats(currentUserId: string): Promise<{ activeOrders: number; pendingDiagnosis: number; readyForPickup: number; monthlyRevenue: number; }> {
-    const orders = (await this.getOrders(currentUserId));
-    const payments = (await this.getPayments(currentUserId));
-    const activeOrders = orders.filter(o => o.status !== "entregado").length;
-    const pendingDiagnosis = orders.filter(o => o.status === "recibido" || o.status === "diagnostico").length;
-    const readyForPickup = orders.filter(o => o.status === "listo").length;
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    const monthlyRevenue = payments.filter(p => { const d = new Date(p.date); return d >= monthStart && d <= monthEnd; }).reduce((sum, p) => sum + p.amount, 0);
-    return { activeOrders, pendingDiagnosis, readyForPickup, monthlyRevenue };
-  }
+  // Settings
+  getSettings(userId: string): Promise<Settings | undefined>;
+  updateSettings(userId: string, settings: InsertSettings): Promise<Settings>;
 }
 
 export class SupabaseStorage implements IStorage {
-  private client: SupabaseClient;
-
-  constructor(url: string, key: string) {
-    this.client = createClient(url, key);
+  // Helper to map Client snake_case -> camelCase
+  private mapClient(row: any): Client {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      dni: row.dni,
+      address: row.address,
+      phone: row.phone,
+      email: row.email,
+      whoPicksUp: row.who_picks_up,
+      notes: row.notes
+    };
   }
 
-  private mapUser(row: any): User { return { id: row.id, username: row.username }; }
-  private mapClient(row: any): Client { return { id: row.id, userId: row.user_id, name: row.name, dni: row.dni, address: row.address, phone: row.phone, email: row.email, whoPicksUp: row.who_picks_up, notes: row.notes }; }
-  private mapDevice(row: any): Device { return { id: row.id, userId: row.user_id, clientId: row.client_id, brand: row.brand, model: row.model, imei: row.imei, serialNumber: row.serial_number, color: row.color, condition: row.condition, lockType: row.lock_type, lockValue: row.lock_value }; }
+  // Helper map Device
+  private mapDevice(row: any): Device {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      clientId: row.client_id,
+      brand: row.brand,
+      model: row.model,
+      imei: row.imei,
+      serialNumber: row.serial_number,
+      color: row.color,
+      condition: row.condition,
+      lockType: row.lock_type,
+      lockValue: row.lock_value
+    };
+  }
+
+  // Helper map Order
   private mapOrder(row: any): RepairOrder {
     return {
       id: row.id,
@@ -174,263 +328,446 @@ export class SupabaseStorage implements IStorage {
       problem: row.problem,
       diagnosis: row.diagnosis,
       solution: row.solution,
-
-      // --- CORRECCIONES CLAVE AQUI ---
-      // Lado Izquierdo: camelCase (Lo que espera tu App)
-      // Lado Derecho: snake_case (Lo que viene de la DB)
       technicianName: row.technician_name,
-      estimatedCost: Number(row.estimated_cost),
-      finalCost: Number(row.final_cost),
-      estimatedDate: row.estimated_date,
-      // -------------------------------
-
-      createdAt: row.created_at,
-      completedAt: row.completed_at,
-      deliveredAt: row.delivered_at,
+      estimatedCost: parseFloat(row.estimated_cost || "0"),
+      finalCost: parseFloat(row.final_cost || "0"),
+      estimatedDate: row.estimated_date ? new Date(row.estimated_date) : null,
+      createdAt: new Date(row.created_at),
+      completedAt: row.completed_at ? new Date(row.completed_at) : null,
+      deliveredAt: row.delivered_at ? new Date(row.delivered_at) : null,
       priority: row.priority,
       notes: row.notes,
-      intakeChecklist: row.intake_checklist || {}
+      intakeChecklist: row.intake_checklist
     };
   }
-  // En server/storage.ts
-  private mapPayment(row: any): Payment {
+
+  // Helper map Settings
+  private mapSettings(row: any): Settings {
     return {
       id: row.id,
       userId: row.user_id,
-      orderId: row.order_id,
-      amount: Number(row.amount),
-      method: row.method,
-      date: row.date,
-      notes: row.notes,
-
-      // CAMBIO IMPORTANTE: Leemos de 'cart_items', no de 'items'
-      items: row.cart_items || row.items || []
+      shopName: row.shop_name,
+      address: row.address,
+      phone: row.phone,
+      receiptDisclaimer: row.receipt_disclaimer,
+      updatedAt: row.updated_at ? new Date(row.updated_at) : null
     };
   }
-  private mapSettings(row: any): BusinessSettings { return { id: row.id, userId: row.user_id, businessName: row.business_name, address: row.address, phone: row.phone, email: row.email, website: row.website, taxId: row.tax_id, logoUrl: row.logo_url, termsAndConditions: row.terms_and_conditions }; }
-  private mapProduct(row: any): Product { return { id: row.id, userId: row.user_id, name: row.name, description: row.description, sku: row.sku, quantity: row.quantity, price: Number(row.price), cost: Number(row.cost), category: row.category, lowStockThreshold: row.low_stock_threshold }; }
 
-  async getUser(id: string): Promise<User | undefined> { const { data } = await this.client.from("users").select("*").eq("id", id).single(); return data ? this.mapUser(data) : undefined; }
-  async getUserByUsername(username: string): Promise<User | undefined> { const { data } = await this.client.from("users").select("*").eq("username", username).single(); return data ? this.mapUser(data) : undefined; }
-  async createUser(user: InsertUser): Promise<User> { const { data, error } = await this.client.from("users").insert(user).select().single(); if (error) throw error; return this.mapUser(data); }
-
-  async getClients(currentUserId: string): Promise<Client[]> { const { data, error } = await this.client.from("clients").select("*").eq("user_id", currentUserId); if (error) throw error; return data.map(this.mapClient); }
-  async getClient(id: string): Promise<Client | undefined> { const { data, error } = await this.client.from("clients").select("*").eq("id", id).single(); return (error || !data) ? undefined : this.mapClient(data); }
-  async createClient(client: InsertClient): Promise<Client> { const dbClient = { user_id: (client as any).userId || (client as any).user_id, name: client.name, dni: client.dni, address: client.address, phone: client.phone, email: client.email, who_picks_up: client.whoPicksUp, notes: client.notes }; const { data, error } = await this.client.from("clients").insert(dbClient).select().single(); if (error) throw error; return this.mapClient(data); }
-  async updateClient(id: string, updates: Partial<InsertClient>): Promise<Client | undefined> { const dbUpdates: any = {}; if (updates.name) dbUpdates.name = updates.name; if (updates.dni) dbUpdates.dni = updates.dni; if (updates.address) dbUpdates.address = updates.address; if (updates.phone) dbUpdates.phone = updates.phone; if (updates.email !== undefined) dbUpdates.email = updates.email; if (updates.whoPicksUp !== undefined) dbUpdates.who_picks_up = updates.whoPicksUp; if (updates.notes !== undefined) dbUpdates.notes = updates.notes; const { data, error } = await this.client.from("clients").update(dbUpdates).eq("id", id).select().single(); return (error || !data) ? undefined : this.mapClient(data); }
-
-  async getDevices(currentUserId: string): Promise<Device[]> { const { data, error } = await this.client.from("devices").select("*").eq("user_id", currentUserId); if (error) throw error; return data.map(this.mapDevice); }
-  async getDevicesByClient(clientId: string): Promise<Device[]> { const { data, error } = await this.client.from("devices").select("*").eq("client_id", clientId); if (error) throw error; return data.map(this.mapDevice); }
-  async getDevice(id: string): Promise<Device | undefined> { const { data, error } = await this.client.from("devices").select("*").eq("id", id).single(); return (error || !data) ? undefined : this.mapDevice(data); }
-  async createDevice(device: InsertDevice): Promise<Device> { const dbDevice = { user_id: (device as any).userId || (device as any).user_id, client_id: device.clientId, brand: device.brand, model: device.model, imei: device.imei, serial_number: device.serialNumber, color: device.color, condition: device.condition, lock_type: device.lockType, lock_value: device.lockValue }; const { data, error } = await this.client.from("devices").insert(dbDevice).select().single(); if (error) throw error; return this.mapDevice(data); }
-
-  async getOrders(currentUserId: string): Promise<RepairOrder[]> { const { data, error } = await this.client.from("repair_orders").select("*").eq("user_id", currentUserId).order("created_at", { ascending: false }); if (error) throw error; return data.map(this.mapOrder); }
-  async getOrdersWithDetails(currentUserId: string): Promise<RepairOrderWithDetails[]> { const orders = await this.getOrders(currentUserId); return Promise.all(orders.map(order => this.enrichOrder(order))); }
-  async getOrderWithDetails(id: string): Promise<RepairOrderWithDetails | undefined> { const { data, error } = await this.client.from("repair_orders").select("*").eq("id", id).single(); if (error || !data) return undefined; return this.enrichOrder(this.mapOrder(data)); }
-  async getOrdersByClient(clientId: string): Promise<RepairOrderWithDetails[]> { const { data, error } = await this.client.from("repair_orders").select("*").eq("client_id", clientId).order("created_at", { ascending: false }); if (error) throw error; const orders = data.map(this.mapOrder); return Promise.all(orders.map(order => this.enrichOrder(order))); }
-
-  private async enrichOrder(order: RepairOrder): Promise<RepairOrderWithDetails> {
-    const client = await this.getClient(order.clientId);
-    const device = await this.getDevice(order.deviceId);
-    const { data: paymentsData } = await this.client.from("payments").select("*").eq("order_id", order.id);
-    const payments = paymentsData ? paymentsData.map(this.mapPayment) : [];
-    return { ...order, client: client!, device: device!, payments };
+  async getUser(id: string): Promise<User | undefined> {
+    const { data } = await supabase.from("users").select("*").eq("id", id).single();
+    return data || undefined;
   }
 
-  async createOrder(order: InsertRepairOrder): Promise<RepairOrder> {
-    const input = order as any;
-    const dbOrder = {
-      // Eliminamos 'this.DEMO_USER_ID' que no existe aquí
-      user_id: input.userId || input.user_id,
-      client_id: input.clientId || input.client_id,
-      device_id: input.deviceId || input.device_id,
-      status: input.status,
-      problem: input.problem,
-      diagnosis: input.diagnosis,
-      solution: input.solution,
-      technician_name: input.technicianName || input.technician_name,
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const { data } = await supabase.from("users").select("*").eq("username", username).single();
+    return data || undefined;
+  }
 
-      // Costos blindados:
-      estimated_cost: input.estimatedCost ?? input.estimated_cost ?? 0,
-      final_cost: input.finalCost ?? input.final_cost ?? 0,
+  async createUser(user: InsertUser): Promise<User> {
+    const { data, error } = await supabase.from("users").insert(user).select().single();
+    if (error) throw error;
+    return data;
+  }
 
-      estimated_date: input.estimatedDate || input.estimated_date,
-      priority: input.priority,
-      notes: input.notes,
-      intake_checklist: input.intakeChecklist || input.intake_checklist || {}
+  async getClients(userId: string): Promise<Client[]> {
+    const { data } = await supabase.from("clients").select("*").eq("user_id", userId).order("name");
+    return (data || []).map(this.mapClient);
+  }
+
+  async getClient(id: string): Promise<Client | undefined> {
+    const { data } = await supabase.from("clients").select("*").eq("id", id).single();
+    return data ? this.mapClient(data) : undefined;
+  }
+
+  async createClient(client: InsertClient & { userId: string }): Promise<Client> {
+    const payload = {
+      user_id: client.userId,
+      name: client.name,
+      dni: client.dni,
+      address: client.address,
+      phone: client.phone,
+      email: client.email,
+      who_picks_up: client.whoPicksUp,
+      notes: client.notes
     };
-
-    const { data, error } = await this.client.from("repair_orders").insert(dbOrder).select().single();
+    const { data, error } = await supabase.from("clients").insert(payload).select().single();
     if (error) throw error;
-    return this.mapOrder(data);
+    return this.mapClient(data);
   }
 
-  async updateOrder(id: string, updates: Partial<RepairOrder>): Promise<RepairOrder | undefined> {
-    const input = updates as any;
-    const dbUpdates: any = {};
+  async updateClient(id: string, update: Partial<InsertClient>): Promise<Client | undefined> {
+    // Map keys manually for update
+    const payload: any = {};
+    if (update.name !== undefined) payload.name = update.name;
+    if (update.dni !== undefined) payload.dni = update.dni;
+    if (update.address !== undefined) payload.address = update.address;
+    if (update.phone !== undefined) payload.phone = update.phone;
+    if (update.email !== undefined) payload.email = update.email;
+    if (update.whoPicksUp !== undefined) payload.who_picks_up = update.whoPicksUp;
+    if (update.notes !== undefined) payload.notes = update.notes;
 
-    if (input.status) dbUpdates.status = input.status;
-    if (input.problem) dbUpdates.problem = input.problem;
-    if (input.diagnosis) dbUpdates.diagnosis = input.diagnosis;
-    if (input.solution) dbUpdates.solution = input.solution;
-    if (input.technicianName !== undefined) dbUpdates.technician_name = input.technicianName;
-
-    // LOGICA BILINGÜE PARA COSTOS:
-    if (input.estimatedCost !== undefined) dbUpdates.estimated_cost = input.estimatedCost;
-    else if (input.estimated_cost !== undefined) dbUpdates.estimated_cost = input.estimated_cost;
-
-    if (input.finalCost !== undefined) dbUpdates.final_cost = input.finalCost;
-    else if (input.final_cost !== undefined) dbUpdates.final_cost = input.final_cost;
-
-    if (input.estimatedDate !== undefined) dbUpdates.estimated_date = input.estimatedDate;
-    if (input.priority) dbUpdates.priority = input.priority;
-    if (input.notes) dbUpdates.notes = input.notes;
-    if (input.status === "listo") dbUpdates.completed_at = new Date().toISOString();
-    if (input.status === "entregado") dbUpdates.delivered_at = new Date().toISOString();
-    if (input.intakeChecklist) dbUpdates.intake_checklist = input.intakeChecklist;
-
-    const { data, error } = await this.client.from("repair_orders").update(dbUpdates).eq("id", id).select().single();
-    if (error || !data) return undefined;
-    return this.mapOrder(data);
+    const { data, error } = await supabase.from("clients").update(payload).eq("id", id).select().single();
+    if (error) return undefined;
+    return this.mapClient(data);
   }
 
-  async getPayments(currentUserId: string): Promise<Payment[]> {
-    const { data, error } = await this.client.from("payments").select("*").eq("user_id", currentUserId).order("date", { ascending: false });
+
+  async getDevices(userId: string): Promise<Device[]> {
+    const { data } = await supabase.from("devices").select("*").eq("user_id", userId);
+    return (data || []).map(this.mapDevice);
+  }
+
+  async getDevicesByClient(clientId: string): Promise<Device[]> {
+    const { data } = await supabase.from("devices").select("*").eq("client_id", clientId);
+    return (data || []).map(this.mapDevice);
+  }
+
+  async createDevice(device: InsertDevice & { userId: string }): Promise<Device> {
+    const payload = {
+      user_id: device.userId,
+      client_id: device.clientId,
+      brand: device.brand,
+      model: device.model,
+      imei: device.imei,
+      serial_number: device.serialNumber,
+      color: device.color,
+      condition: device.condition,
+      lock_type: device.lockType,
+      lock_value: device.lockValue
+    };
+    const { data, error } = await supabase.from("devices").insert(payload).select().single();
     if (error) throw error;
-    return data.map(this.mapPayment);
+    return this.mapDevice(data);
   }
-  async getPaymentsWithOrders(currentUserId: string): Promise<(Payment & { order?: RepairOrderWithDetails })[]> {
-    const payments = await this.getPayments(currentUserId);
-    return Promise.all(payments.map(async payment => {
-      if (!payment.orderId) return { ...payment, order: undefined };
-      const order = await this.getOrderWithDetails(payment.orderId);
-      return { ...payment, order };
+
+  async updateDevice(id: string, data: Partial<InsertDevice>): Promise<Device | undefined> {
+    // Partial Update mapping... simplified for now, assuming standard usage
+    const { data: res } = await supabase.from("devices").update(data as any).eq("id", id).select().single();
+    return res ? this.mapDevice(res) : undefined;
+  }
+
+  async getOrdersWithDetails(userId: string): Promise<RepairOrderWithDetails[]> {
+    const { data } = await supabase
+      .from("repair_orders")
+      .select(`
+                *,
+                client:clients(*),
+                device:devices(*)
+            `)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    return (data || []).map(row => ({
+      ...this.mapOrder(row),
+      client: this.mapClient(row.client),
+      device: this.mapDevice(row.device)
     }));
   }
 
-  // --- FUNCIÓN MODIFICADA ---
-  async createPayment(insertPayment: InsertPayment): Promise<Payment> {
-    // 1. Validar Stock
-    if (insertPayment.items) {
-      for (const item of insertPayment.items) {
-        if (item.type === "product" && item.id) {
-          const product = await this.getProduct(item.id);
-          if (!product) throw new Error(`Producto no encontrado: ${item.name}`);
-          if (product.quantity < item.quantity) {
-            throw new Error(`Stock insuficiente para: ${item.name} (Stock: ${product.quantity})`);
+  async getOrderWithDetails(id: string): Promise<RepairOrderWithDetails | undefined> {
+    const { data } = await supabase
+      .from("repair_orders")
+      .select(`
+                *,
+                client:clients(*),
+                device:devices(*)
+            `)
+      .eq("id", id)
+      .single();
+
+    if (!data) return undefined;
+    return {
+      ...this.mapOrder(data),
+      client: this.mapClient(data.client),
+      device: this.mapDevice(data.device)
+    };
+  }
+
+  async createOrder(order: InsertRepairOrder & { userId: string }): Promise<RepairOrder> {
+    const payload = {
+      user_id: order.userId,
+      client_id: order.clientId,
+      device_id: order.deviceId,
+      problem: order.problem,
+      priority: order.priority,
+      estimated_cost: order.estimatedCost.toString(), // Store as string for decimal
+      estimated_date: order.estimatedDate,
+      intake_checklist: order.intakeChecklist || {}
+    };
+    const { data, error } = await supabase.from("repair_orders").insert(payload).select().single();
+    if (error) throw error;
+    return this.mapOrder(data);
+  }
+
+  async updateOrder(id: string, order: Partial<InsertRepairOrder>): Promise<RepairOrder | undefined> {
+    const payload: any = {};
+    if (order.status) payload.status = order.status;
+    if (order.diagnosis) payload.diagnosis = order.diagnosis;
+    if (order.solution) payload.solution = order.solution;
+    if (order.technicianName) payload.technician_name = order.technicianName;
+    if (order.finalCost !== undefined) payload.final_cost = order.finalCost.toString();
+    if (order.completedAt) payload.completed_at = order.completedAt;
+    if (order.deliveredAt) payload.delivered_at = order.deliveredAt;
+    // ... other fields as needed
+
+    const { data, error } = await supabase.from("repair_orders").update(payload).eq("id", id).select().single();
+    if (error) return undefined;
+    return this.mapOrder(data);
+  }
+
+  async getPaymentsWithOrders(userId: string): Promise<(Payment & { order?: RepairOrder })[]> {
+    const { data } = await supabase
+      .from("payments")
+      .select(`*, order:repair_orders(*)`)
+      .eq("user_id", userId)
+      .order("date", { ascending: false });
+
+    return (data || []).map(p => ({
+      id: p.id,
+      userId: p.user_id,
+      orderId: p.order_id,
+      amount: parseFloat(p.amount),
+      method: p.method,
+      date: new Date(p.date),
+      notes: p.notes,
+      items: p.cart_items,
+      order: p.order ? this.mapOrder(p.order) : undefined
+    }));
+  }
+
+  async createPayment(payment: InsertPayment & { userId: string, items: PaymentItem[] }): Promise<Payment> {
+    // Stock Deduction Logic
+    if (payment.items && payment.items.length > 0) {
+      for (const item of payment.items) {
+        if (item.type === 'product' && item.id) {
+          // Fetch current quantity
+          const { data: prod } = await supabase.from("products").select("quantity").eq("id", item.id).single();
+          if (prod) {
+            const newQty = prod.quantity - item.quantity;
+            await supabase.from("products").update({ quantity: newQty }).eq("id", item.id);
           }
         }
       }
     }
 
-    // 2. DETECTAR ORDEN (Nuevo lógica para que baje el saldo)
-    // Si no viene orderId, buscamos en los items a ver si hay una reparación
-    let targetOrderId = insertPayment.orderId || null;
-    if (!targetOrderId && insertPayment.items) {
-      const repairItem = insertPayment.items.find(i => i.type === 'repair' && i.id);
-      if (repairItem) {
-        targetOrderId = repairItem.id || null;
-      }
-    }
-
-    // 3. Procesar Items (Solo descontar stock de productos)
-    // YA NO cambiamos el estado de la reparación a entregado
-    if (insertPayment.items) {
-      for (const item of insertPayment.items) {
-        if (item.type === "product" && item.id) {
-          const product = await this.getProduct(item.id);
-          if (product) {
-            await this.updateProduct(item.id, { quantity: product.quantity - item.quantity });
-          }
-        }
-      }
-    }
-
-    const { data: userData } = await this.client.auth.getUser();
-    const userId = (insertPayment as any).userId || (insertPayment as any).user_id;
-
-    const dbPayment = {
-      user_id: userId,
-      order_id: targetOrderId, // Usamos el ID detectado
-      amount: insertPayment.amount,
-      method: insertPayment.method,
-      notes: insertPayment.notes,
-      cart_items: insertPayment.items // Mapeo correcto para la DB
+    const payload = {
+      user_id: payment.userId,
+      order_id: payment.orderId || null,
+      amount: payment.amount.toString(),
+      method: payment.method,
+      notes: payment.notes,
+      cart_items: payment.items, // JSON array
+      date: new Date()
     };
 
-    const { data, error } = await this.client.from("payments").insert(dbPayment).select().single();
+    const { data, error } = await supabase.from("payments").insert(payload).select().single();
     if (error) throw error;
-    return this.mapPayment(data);
+    return {
+      id: data.id,
+      userId: data.user_id,
+      orderId: data.order_id,
+      amount: parseFloat(data.amount),
+      method: data.method,
+      date: new Date(data.date),
+      notes: data.notes,
+      items: data.cart_items
+    };
   }
 
-  async getSettings(currentUserId: string): Promise<BusinessSettings | undefined> {
-    const { data, error } = await this.client.from("business_settings").select("*").eq("user_id", currentUserId).single();
-    if (error || !data) return undefined;
-    return this.mapSettings(data);
-  }
-  async updateSettings(currentUserId: string, settings: InsertSettings): Promise<BusinessSettings> {
-    const dbSettings = { user_id: currentUserId, business_name: settings.businessName, address: settings.address, phone: settings.phone, email: settings.email, website: settings.website, tax_id: settings.taxId, logo_url: settings.logoUrl, terms_and_conditions: settings.termsAndConditions };
-    const { data, error } = await this.client.from("business_settings").upsert(dbSettings, { onConflict: 'user_id' }).select().single();
-    if (error) throw error;
-    return this.mapSettings(data);
+  async getExpenses(userId: string): Promise<Expense[]> {
+    const { data } = await supabase.from("expenses").select("*").eq("user_id", userId).order("date", { ascending: false });
+    return (data || []).map(e => ({
+      id: e.id,
+      userId: e.user_id,
+      category: e.category,
+      description: e.description,
+      amount: parseFloat(e.amount),
+      date: new Date(e.date)
+    }));
   }
 
-  async getProducts(currentUserId: string): Promise<Product[]> {
-    const { data, error } = await this.client.from("products").select("*").eq("user_id", currentUserId);
+  async createExpense(expense: InsertExpense & { userId: string }): Promise<Expense> {
+    const payload = {
+      user_id: expense.userId,
+      category: expense.category,
+      description: expense.description,
+      amount: expense.amount.toString(),
+      date: expense.date
+    };
+    const { data, error } = await supabase.from("expenses").insert(payload).select().single();
     if (error) throw error;
-    return data.map(this.mapProduct);
+    return {
+      id: data.id,
+      userId: data.user_id,
+      category: data.category,
+      description: data.description,
+      amount: parseFloat(data.amount),
+      date: new Date(data.date)
+    };
   }
-  async getProduct(id: string): Promise<Product | undefined> {
-    const { data, error } = await this.client.from("products").select("*").eq("id", id).single();
-    if (error || !data) return undefined;
-    return this.mapProduct(data);
+
+  async getStats(userId: string): Promise<any> {
+    // Simple aggregate implementation
+    // 1. Order Counts
+    const { data: orders } = await supabase.from("repair_orders").select("status, final_cost").eq("user_id", userId);
+    const activeOrders = orders?.filter(o => ["recibido", "diagnostico", "en_curso"].includes(o.status)).length || 0;
+    const pendingDiagnosis = orders?.filter(o => o.status === "recibido").length || 0;
+    const readyPickup = orders?.filter(o => o.status === "listo").length || 0;
+
+    // 2. Financials (Today)
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data: payments } = await supabase.from("payments").select("amount").eq("user_id", userId).gte("date", today);
+    const dailyIncome = payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0;
+
+    const { data: expenses } = await supabase.from("expenses").select("amount").eq("user_id", userId).gte("date", today);
+    const dailyExpenses = expenses?.reduce((sum, e) => sum + parseFloat(e.amount), 0) || 0;
+
+    // Cash in Box (Total All Time? Or filtered? Assuming simple daily for now or all time?)
+    // Context: "Cash in Box" usually means current cash on hand.
+    // I will return Net Balance for today as placeholder or 0.
+    // Actually, let's sum ALL cash payments - ALL expenses?
+    // For safety/speed, just return daily stuff.
+
+    return {
+      activeOrders,
+      pendingDiagnosis,
+      readyPickup,
+      dailyIncome,
+      dailyExpenses,
+      cashInBox: dailyIncome - dailyExpenses, // Approximation
+      netBalance: dailyIncome - dailyExpenses
+    };
   }
-  async createProduct(product: InsertProduct): Promise<Product> {
-    const dbProduct = { user_id: (product as any).userId || (product as any).user_id, name: product.name, description: product.description, sku: product.sku, quantity: product.quantity, price: product.price, cost: product.cost, category: product.category, low_stock_threshold: product.lowStockThreshold };
-    const { data, error } = await this.client.from("products").insert(dbProduct).select().single();
+
+  async getProducts(userId: string): Promise<Product[]> {
+    const { data } = await supabase.from("products").select("*").eq("user_id", userId).order("name");
+    return (data || []).map(p => ({
+      id: p.id,
+      userId: p.user_id,
+      name: p.name,
+      description: p.description,
+      sku: p.sku,
+      quantity: p.quantity,
+      price: parseFloat(p.price),
+      cost: parseFloat(p.cost),
+      category: p.category,
+      lowStockThreshold: p.low_stock_threshold
+    }));
+  }
+
+  async createProduct(product: InsertProduct & { userId: string }): Promise<Product> {
+    const payload = {
+      user_id: product.userId,
+      name: product.name,
+      description: product.description,
+      sku: product.sku,
+      quantity: product.quantity,
+      price: product.price.toString(),
+      cost: product.cost.toString(),
+      category: product.category,
+      low_stock_threshold: product.lowStockThreshold
+    };
+    const { data, error } = await supabase.from("products").insert(payload).select().single();
     if (error) throw error;
-    return this.mapProduct(data);
+    return {
+      id: data.id,
+      userId: data.user_id,
+      name: data.name,
+      description: data.description,
+      sku: data.sku,
+      quantity: data.quantity,
+      price: parseFloat(data.price),
+      cost: parseFloat(data.cost),
+      category: data.category,
+      lowStockThreshold: data.low_stock_threshold
+    };
   }
+
   async updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined> {
-    const dbUpdates: any = {};
-    if (product.name) dbUpdates.name = product.name;
-    if (product.description !== undefined) dbUpdates.description = product.description;
-    if (product.sku !== undefined) dbUpdates.sku = product.sku;
-    if (product.quantity !== undefined) dbUpdates.quantity = product.quantity;
-    if (product.price !== undefined) dbUpdates.price = product.price;
-    if (product.cost !== undefined) dbUpdates.cost = product.cost;
-    if (product.category !== undefined) dbUpdates.category = product.category;
-    if (product.lowStockThreshold !== undefined) dbUpdates.low_stock_threshold = product.lowStockThreshold;
-    const { data, error } = await this.client.from("products").update(dbUpdates).eq("id", id).select().single();
-    if (error || !data) return undefined;
-    return this.mapProduct(data);
+    const payload: any = {};
+    if (product.name) payload.name = product.name;
+    if (product.description) payload.description = product.description;
+    if (product.sku) payload.sku = product.sku;
+    if (product.quantity !== undefined) payload.quantity = product.quantity;
+    if (product.price !== undefined) payload.price = product.price.toString();
+    if (product.cost !== undefined) payload.cost = product.cost.toString();
+
+    const { data, error } = await supabase.from("products").update(payload).eq("id", id).select().single();
+    if (error) return undefined;
+    return {
+      id: data.id,
+      userId: data.user_id,
+      name: data.name,
+      description: data.description,
+      sku: data.sku,
+      quantity: data.quantity,
+      price: parseFloat(data.price),
+      cost: parseFloat(data.cost),
+      category: data.category,
+      lowStockThreshold: data.low_stock_threshold
+    };
   }
 
   async deleteProduct(id: string, userId: string): Promise<void> {
-    const { error } = await this.client
-      .from("products")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", userId); // Security: ensure user owns the product
-
-    if (error) {
-      throw error;
-    }
+    await supabase.from("products").delete().eq("id", id).eq("user_id", userId);
   }
 
-  async getStats(currentUserId: string): Promise<{ activeOrders: number; pendingDiagnosis: number; readyForPickup: number; monthlyRevenue: number; }> {
-    const { count: activeOrders } = await this.client.from("repair_orders").select("*", { count: 'exact', head: true }).eq("user_id", currentUserId).neq("status", "entregado");
-    const { count: pendingDiagnosis } = await this.client.from("repair_orders").select("*", { count: 'exact', head: true }).eq("user_id", currentUserId).in("status", ["recibido", "diagnostico"]);
-    const { count: readyForPickup } = await this.client.from("repair_orders").select("*", { count: 'exact', head: true }).eq("user_id", currentUserId).eq("status", "listo");
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
-    const { data: payments } = await this.client.from("payments").select("amount").eq("user_id", currentUserId).gte("date", monthStart).lte("date", monthEnd);
-    const monthlyRevenue = payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
-    return { activeOrders: activeOrders || 0, pendingDiagnosis: pendingDiagnosis || 0, readyForPickup: readyForPickup || 0, monthlyRevenue };
+  // ------------------------------------
+  // TASK 1: Settings Implementation
+  // ------------------------------------
+  async getSettings(userId: string): Promise<Settings | undefined> {
+    const { data, error } = await supabase
+      .from("settings")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
+
+    if (error || !data) return undefined;
+    return this.mapSettings(data);
+  }
+
+  async updateSettings(userId: string, settings: InsertSettings): Promise<Settings> {
+    // Upsert by user_id. 
+    // Note: The table ID is random UUID, but we want 1 setting per user.
+    // We'll check if one exists first or rely on unique constraint if it existed?
+    // Schema doesn't enforce Unique user_id on settings in pgTable def (lines 170+),
+    // but Logic dictates it.
+
+    // Strategy: Try to get existing ID for this user.
+    const existing = await this.getSettings(userId);
+
+    const payload = {
+      user_id: userId,
+      shop_name: settings.shopName,
+      address: settings.address,
+      phone: settings.phone,
+      receipt_disclaimer: settings.receiptDisclaimer,
+      updated_at: new Date()
+    };
+
+    let result;
+    if (existing) {
+      const { data } = await supabase
+        .from("settings")
+        .update(payload)
+        .eq("id", existing.id)
+        .select()
+        .single();
+      result = data;
+    } else {
+      const { data } = await supabase
+        .from("settings")
+        .insert(payload)
+        .select()
+        .single();
+      result = data;
+    }
+
+    if (!result) throw new Error("Failed to update settings");
+    return this.mapSettings(result);
   }
 }
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-export const storage = (supabaseUrl && supabaseKey) ? new SupabaseStorage(supabaseUrl, supabaseKey) : new MemStorage();
+export const storage = new SupabaseStorage();

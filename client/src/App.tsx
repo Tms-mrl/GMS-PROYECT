@@ -20,7 +20,8 @@ import PrintOrder from "@/pages/print-order";
 import AuthPage from "@/pages/auth-page";
 import InventoryPage from "@/pages/inventory"; // Import InventoryPage
 import { AuthProvider } from "@/hooks/use-auth";
-import { ProtectedRoute } from "@/components/protected-route"; // Changed import path
+import { ProtectedRoute } from "@/components/protected-route";
+import SettingsPage from "@/pages/settings";
 
 function Router() {
   return (
@@ -36,6 +37,7 @@ function Router() {
       <Route path="/cobros" component={Payments} />
       <Route path="/reportes" component={Reports} />
       <Route path="/inventory" component={InventoryPage} />
+      <Route path="/configuracion" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
   );

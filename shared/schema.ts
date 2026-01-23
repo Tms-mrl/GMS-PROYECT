@@ -1,81 +1,29 @@
+import {
+  pgTable,
+  text,
+  serial,
+  integer,
+  boolean,
+  timestamp,
+  jsonb,
+  decimal,
+  uuid
+} from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Status types for repair orders
+// --------------------------------------------------------------------------
+// 1. CONSTANTES Y LEGACY (Lo que el Frontend necesita para no romperse)
+// --------------------------------------------------------------------------
 export const orderStatuses = ["recibido", "diagnostico", "en_curso", "listo", "entregado"] as const;
 export type OrderStatus = typeof orderStatuses[number];
 
-// Payment methods
 export const paymentMethods = ["efectivo", "tarjeta", "transferencia"] as const;
 export type PaymentMethod = typeof paymentMethods[number];
 
-// --- CLIENTS ---
-export interface Client {
-  id: string;
-  userId: string;
-  name: string;
-  dni: string;
-  address: string;
-  phone: string;
-  email: string;
-  whoPicksUp: string;
-  notes: string;
-}
-
-export const insertClientSchema = z.object({
-  name: z.string().min(1, "El nombre es requerido"),
-  dni: z.string().min(1, "El DNI/Documento es requerido"),
-  address: z.string().min(1, "La dirección es requerida"),
-  phone: z.string().min(1, "El teléfono es requerido"),
-  email: z.string().email("Email inválido").or(z.literal("")),
-  whoPicksUp: z.string().optional(),
-  notes: z.string(),
-});
-
-export type InsertClient = z.infer<typeof insertClientSchema>;
-
-// --- DEVICES ---
-export type LockType = "PIN" | "PATRON" | "PASSWORD" | "";
-
-export interface Device {
-  id: string;
-  userId: string;
-  clientId: string;
-  brand: string;
-  model: string;
-  imei: string;
-  serialNumber: string;
-  color: string;
-  condition: string;
-  lockType: LockType;
-  lockValue: string;
-}
-
-export const insertDeviceSchema = z.object({
-  clientId: z.string().min(1, "Cliente requerido"),
-  brand: z.string().min(1, "La marca es requerida"),
-  model: z.string().min(1, "El modelo es requerido"),
-  imei: z.string(),
-  serialNumber: z.string(),
-  color: z.string(),
-  condition: z.string(),
-  lockType: z.enum(["PIN", "PATRON", "PASSWORD"]).or(z.literal("")).optional(),
-  lockValue: z.string().optional(),
-});
-
-export type InsertDevice = z.infer<typeof insertDeviceSchema>;
-
-// --- INTAKE CHECKLIST ---
+// --- RESTAURADO: CHECKLIST SCHEMA (Para evitar el error del plugin) ---
 export const checklistValue = z.enum(["yes", "no", "unknown"]);
 export type ChecklistValue = z.infer<typeof checklistValue>;
-
-export interface IntakeChecklist {
-  charges?: ChecklistValue;
-  powersOn?: ChecklistValue;
-  dropped?: ChecklistValue;
-  wet?: ChecklistValue;
-  openedBefore?: ChecklistValue;
-  inWarranty?: ChecklistValue;
-}
 
 export const intakeChecklistSchema = z.object({
   charges: checklistValue.optional(),
@@ -85,154 +33,213 @@ export const intakeChecklistSchema = z.object({
   openedBefore: checklistValue.optional(),
   inWarranty: checklistValue.optional(),
 });
+// --------------------------------------------------------------------------
 
-// --- REPAIR ORDERS ---
-export interface RepairOrder {
-  id: string;
-  userId: string;
-  clientId: string;
-  deviceId: string;
-  status: OrderStatus;
-  problem: string;
-  diagnosis: string;
-  solution: string;
-  technicianName: string;
-  estimatedCost: number;
-  finalCost: number;
-  createdAt: string;
-  estimatedDate: string;
-  completedAt: string | null;
-  deliveredAt: string | null;
-  priority: "normal" | "urgente";
-  notes: string;
-  intakeChecklist: IntakeChecklist;
-}
+// --------------------------------------------------------------------------
+// 2. DEFINICIÓN DE TABLAS (Drizzle)
+// --------------------------------------------------------------------------
 
-export const insertRepairOrderSchema = z.object({
-  clientId: z.string().min(1, "Cliente requerido"),
-  deviceId: z.string().min(1, "Dispositivo requerido"),
-  status: z.enum(orderStatuses).default("recibido"),
-  problem: z.string().min(1, "Describa el problema"),
-  diagnosis: z.string(),
-  solution: z.string(),
-  technicianName: z.string(),
-  estimatedCost: z.number().min(0),
-  finalCost: z.number().min(0),
-  estimatedDate: z.string(),
-  priority: z.enum(["normal", "urgente"]).default("normal"),
-  notes: z.string(),
-  intakeChecklist: intakeChecklistSchema.default({}),
+// --- USERS ---
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
 });
 
-export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
+// --- CLIENTS ---
+export const clients = pgTable("clients", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  dni: text("dni").default(""),
+  address: text("address").default(""),
+  phone: text("phone").default(""),
+  email: text("email").default(""),
+  whoPicksUp: text("who_picks_up").default(""),
+  notes: text("notes").default(""),
+});
 
-// --- PAYMENTS (MODIFICADO: orderId ahora es opcional) ---
-// --- PAYMENTS (MODIFICADO: Soporte POS multi-ítem) ---
+// --- DEVICES ---
+export const devices = pgTable("devices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  clientId: text("client_id").notNull(),
+  brand: text("brand").notNull(),
+  model: text("model").notNull(),
+  imei: text("imei").default(""),
+  serialNumber: text("serial_number").default(""),
+  color: text("color").default(""),
+  condition: text("condition").default(""),
+  lockType: text("lock_type").default(""),
+  lockValue: text("lock_value").default(""),
+});
+
+// --- REPAIR ORDERS ---
+export const repairOrders = pgTable("repair_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  clientId: text("client_id").notNull(),
+  deviceId: text("device_id").notNull(),
+  status: text("status").notNull().default("recibido"),
+
+  problem: text("problem").notNull(),
+  diagnosis: text("diagnosis").default(""),
+  solution: text("solution").default(""),
+  technicianName: text("technician_name").default(""),
+
+  estimatedCost: decimal("estimated_cost", { precision: 10, scale: 2 }).default("0"),
+  finalCost: decimal("final_cost", { precision: 10, scale: 2 }).default("0"),
+
+  estimatedDate: timestamp("estimated_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  deliveredAt: timestamp("delivered_at"),
+  priority: text("priority").default("normal"),
+  notes: text("notes").default(""),
+  intakeChecklist: jsonb("intake_checklist").default({}),
+});
+
+// --- PRODUCTS ---
+export const products = pgTable("products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  description: text("description").default(""),
+  sku: text("sku").default(""),
+  quantity: integer("quantity").notNull().default(0),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  cost: decimal("cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  category: text("category").default("General"),
+  lowStockThreshold: integer("low_stock_threshold").default(5),
+});
+
+// --- PAYMENTS ---
 export interface PaymentItem {
   type: "product" | "repair" | "other";
-  id?: string; // product_id or order_id
+  id?: string;
   name: string;
   quantity: number;
   price: number;
 }
 
-export interface Payment {
-  id: string;
-  userId: string;
-  orderId: string | null; // Mantenemos legacy o para referencia rápida si es un solo repair
-  amount: number;
-  method: PaymentMethod;
-  date: string;
-  notes: string;
-  items: PaymentItem[] | null; // Nueva columna JSONB
-}
-
-export const insertPaymentSchema = z.object({
-  orderId: z.string().nullable().optional(),
-  amount: z.number().min(0.01, "El monto debe ser mayor a 0"),
-  method: z.enum(paymentMethods),
-  notes: z.string(),
-  items: z.array(z.object({
-    type: z.enum(["product", "repair", "other"]),
-    id: z.string().optional(),
-    name: z.string(),
-    quantity: z.number().min(1),
-    price: z.number().min(0)
-  })).optional()
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  orderId: text("order_id"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  method: text("method").notNull(),
+  date: timestamp("date").defaultNow().notNull(),
+  notes: text("notes").default(""),
+  items: jsonb("cart_items").$type<PaymentItem[]>(),
 });
 
-export type InsertPayment = z.infer<typeof insertPaymentSchema>;
-
-// --- NEW: BUSINESS SETTINGS (CONFIGURACIÓN) ---
-export interface BusinessSettings {
-  id: string;
-  userId: string;
-  businessName: string;
-  address: string;
-  phone: string;
-  email: string;
-  website: string;
-  taxId: string; // CUIT/RUT
-  logoUrl: string;
-  termsAndConditions: string;
-}
-
-export const insertSettingsSchema = z.object({
-  businessName: z.string().min(1, "Nombre del negocio requerido"),
-  address: z.string(),
-  phone: z.string(),
-  email: z.string().email().or(z.literal("")),
-  website: z.string().optional(),
-  taxId: z.string().optional(),
-  logoUrl: z.string().optional(),
-  termsAndConditions: z.string().optional(),
+// --- EXPENSES ---
+export const expenses = pgTable("expenses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  category: text("category").notNull(),
+  description: text("description").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  date: timestamp("date").notNull().defaultNow(),
 });
 
-export type InsertSettings = z.infer<typeof insertSettingsSchema>;
-
-// --- NEW: INVENTORY / STOCK ---
-export interface Product {
-  id: string;
-  userId: string;
-  name: string;
-  description: string;
-  sku: string; // Código de barras o interno
-  quantity: number;
-  price: number; // Precio de venta
-  cost: number;  // Costo de compra
-  category: string;
-  lowStockThreshold: number; // Avisar si baja de esta cantidad
-}
-
-export const insertProductSchema = z.object({
-  name: z.string().min(1, "Nombre del producto requerido"),
-  description: z.string(),
-  sku: z.string(),
-  quantity: z.number().int().min(0),
-  price: z.number().min(0),
-  cost: z.number().min(0),
-  category: z.string(),
-  lowStockThreshold: z.number().int().default(5),
+// --- SETTINGS ---
+export const settings = pgTable("settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  shopName: text("shop_name").notNull().default("Mi Taller"),
+  address: text("address").default(""),
+  phone: text("phone").default(""),
+  receiptDisclaimer: text("receipt_disclaimer").default("Garantía de 30 días."),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+
+// --------------------------------------------------------------------------
+// 3. SCHEMAS & TYPES (ZOD + TS)
+// --------------------------------------------------------------------------
+
+// Helpers
+export const insertUserSchema = createInsertSchema(users);
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+
+// Clients
+export const insertClientSchema = createInsertSchema(clients);
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = z.infer<typeof insertClientSchema>;
+
+// Devices
+export const insertDeviceSchema = createInsertSchema(devices);
+export type Device = typeof devices.$inferSelect;
+export type InsertDevice = z.infer<typeof insertDeviceSchema>;
+
+// Repair Orders (Hack para decimales)
+export const insertRepairOrderSchema = createInsertSchema(repairOrders, {
+  estimatedCost: z.coerce.number(),
+  finalCost: z.coerce.number()
+});
+export type RepairOrder = Omit<typeof repairOrders.$inferSelect, "estimatedCost" | "finalCost"> & {
+  estimatedCost: number;
+  finalCost: number;
+};
+export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
+
+// Products
+export const insertProductSchema = createInsertSchema(products, {
+  price: z.coerce.number(),
+  cost: z.coerce.number(),
+  quantity: z.coerce.number(),
+});
+export type Product = Omit<typeof products.$inferSelect, "price" | "cost"> & {
+  price: number;
+  cost: number;
+};
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 
-// --- EXTENDED TYPES ---
+// Payments
+export const insertPaymentSchema = createInsertSchema(payments, {
+  amount: z.coerce.number(),
+}).pick({
+  orderId: true,
+  amount: true,
+  method: true,
+  notes: true,
+  items: true
+});
+export type Payment = Omit<typeof payments.$inferSelect, "amount"> & {
+  amount: number;
+};
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+
+// Expenses (Arregla el Error 400 y el type mismatch)
+export const insertExpenseSchema = createInsertSchema(expenses, {
+  date: z.coerce.date(),     // Convierte string ISO a Date
+  amount: z.coerce.number()  // Convierte "12000" a 12000
+}).pick({
+  category: true,
+  description: true,
+  amount: true,
+  date: true,
+});
+export type Expense = Omit<typeof expenses.$inferSelect, "amount"> & {
+  amount: number;
+};
+export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+
+// Settings
+export const insertSettingsSchema = createInsertSchema(settings).pick({
+  shopName: true,
+  address: true,
+  phone: true,
+  receiptDisclaimer: true,
+});
+export type Settings = typeof settings.$inferSelect;
+export type InsertSettings = z.infer<typeof insertSettingsSchema>;
+
+// Relations
 export interface RepairOrderWithDetails extends RepairOrder {
   client: Client;
   device: Device;
-  payments: Payment[];
+  payments?: Payment[];
 }
-
-export interface User {
-  id: string;
-  username: string;
-}
-
-export const insertUserSchema = z.object({
-  username: z.string().min(1),
-  password: z.string().min(1),
-});
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-
