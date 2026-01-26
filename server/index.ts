@@ -1,17 +1,35 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
-import cors from "cors"; // <--- IMPORTANTE: Importamos CORS
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
 const app = express();
 
-// <--- CONFIGURACIÓN DE CORS (Permite que Vercel hable con Railway)
+// --- CONFIGURACIÓN DE CORS (LISTA BLANCA) ---
+// Aquí definimos quién tiene permiso para hablar con el servidor
+const allowedOrigins = [
+  "http://localhost:5001",                   // Tu entorno local
+  "https://gsm-proyect.vercel.app"           // Tu producción en Vercel
+];
+
 app.use(cors({
-  origin: true, // En producción idealmente pondrías tu dominio de Vercel, pero "*" funciona para empezar.
-  credentials: true
+  origin: (origin, callback) => {
+    // 1. Permitir peticiones sin origen (como Postman o Server-to-Server)
+    if (!origin) return callback(null, true);
+
+    // 2. Verificar si el origen está en la lista permitida
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log(`Bloqueado por CORS: ${origin}`); // Log para depurar si falla
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true // Importante para cookies y headers de autorización
 }));
+// ---------------------------------------------
 
 const httpServer = createServer(app);
 
