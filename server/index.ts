@@ -1,11 +1,18 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors"; // <--- IMPORTANTE: Importamos CORS
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
-
 const app = express();
+
+// <--- CONFIGURACIÓN DE CORS (Permite que Vercel hable con Railway)
+app.use(cors({
+  origin: "*", // En producción idealmente pondrías tu dominio de Vercel, pero "*" funciona para empezar.
+  credentials: true
+}));
+
 const httpServer = createServer(app);
 
 declare module "http" {
