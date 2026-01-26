@@ -102,7 +102,6 @@ export const products = pgTable("products", {
 });
 
 // --- PAYMENTS ---
-// Interfaz auxiliar para los Items del carrito
 export interface PaymentItem {
   type: "product" | "repair" | "other";
   id?: string;
@@ -119,7 +118,6 @@ export const payments = pgTable("payments", {
   method: text("method").notNull(),
   date: timestamp("date").defaultNow().notNull(),
   notes: text("notes").default(""),
-  // TRUCO: Mapeamos la columna 'cart_items' a la propiedad TS 'items' con el tipo correcto
   items: jsonb("cart_items").$type<PaymentItem[]>(),
 });
 
@@ -133,13 +131,19 @@ export const expenses = pgTable("expenses", {
   date: timestamp("date").notNull().defaultNow(),
 });
 
-// --- SETTINGS (La nueva tabla limpia) ---
+// --- SETTINGS ---
 export const settings = pgTable("settings", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
   shopName: text("shop_name").notNull().default("Mi Taller"),
   address: text("address").default(""),
   phone: text("phone").default(""),
+  email: text("email").default(""),
+  whatsapp: text("whatsapp").default(""),
+  landline: text("landline").default(""),
+  logoUrl: text("logo_url").default(""),
+  cardSurcharge: decimal("card_surcharge", { precision: 10, scale: 2 }).default("0"),
+  transferSurcharge: decimal("transfer_surcharge", { precision: 10, scale: 2 }).default("0"), // <--- CAMPO AGREGADO
   receiptDisclaimer: text("receipt_disclaimer").default("Garantía de 30 días."),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -147,22 +151,20 @@ export const settings = pgTable("settings", {
 
 // --------------------------------------------------------------------------
 // 3. TIPOS (INTERFACES) "PARCHEADOS"
-// Aquí forzamos a TS a creer que los decimales son números (Number)
-// para que no rompa las sumas y cálculos en storage.ts
 // --------------------------------------------------------------------------
 
-// Helpers para crear esquemas de inserción con coerción automática
+// Helpers para crear esquemas de inserción
 export const insertUserSchema = createInsertSchema(users);
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
 // Clients
-export const insertClientSchema = createInsertSchema(clients);
+export const insertClientSchema = createInsertSchema(clients).omit({ userId: true, id: true });
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = z.infer<typeof insertClientSchema>;
 
 // Devices
-export const insertDeviceSchema = createInsertSchema(devices);
+export const insertDeviceSchema = createInsertSchema(devices).omit({ userId: true, id: true });
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 
@@ -170,12 +172,13 @@ export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 export const insertRepairOrderSchema = createInsertSchema(repairOrders, {
   estimatedCost: z.coerce.number(),
   finalCost: z.coerce.number()
-});
-// "Omit" borra la definición original de string y la reemplazamos por number
+}).omit({ userId: true, id: true });
+
 export type RepairOrder = Omit<typeof repairOrders.$inferSelect, "estimatedCost" | "finalCost"> & {
   estimatedCost: number;
   finalCost: number;
 };
+
 export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
 
 // Products (Override decimal -> number)
@@ -183,7 +186,8 @@ export const insertProductSchema = createInsertSchema(products, {
   price: z.coerce.number(),
   cost: z.coerce.number(),
   quantity: z.coerce.number(),
-});
+}).omit({ userId: true, id: true });
+
 export type Product = Omit<typeof products.$inferSelect, "price" | "cost"> & {
   price: number;
   cost: number;
@@ -208,7 +212,7 @@ export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 // Expenses (Override decimal -> number)
 export const insertExpenseSchema = createInsertSchema(expenses, {
   date: z.coerce.date(),
-  amount: z.coerce.string() // El formulario envía string, Zod lo maneja
+  amount: z.coerce.string()
 }).pick({
   category: true,
   description: true,
@@ -221,13 +225,25 @@ export type Expense = Omit<typeof expenses.$inferSelect, "amount"> & {
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
 // Settings
-export const insertSettingsSchema = createInsertSchema(settings).pick({
+export const insertSettingsSchema = createInsertSchema(settings, {
+  cardSurcharge: z.coerce.number(),
+  transferSurcharge: z.coerce.number(), // <--- COERCIÓN AGREGADA
+}).pick({
   shopName: true,
   address: true,
   phone: true,
+  email: true,
+  whatsapp: true,
+  landline: true,
+  logoUrl: true,
+  cardSurcharge: true,
+  transferSurcharge: true, // <--- PERMITIDO
   receiptDisclaimer: true,
 });
-export type Settings = typeof settings.$inferSelect; // Aquí todo es texto, no hace falta parchear
+export type Settings = Omit<typeof settings.$inferSelect, "cardSurcharge" | "transferSurcharge"> & {
+  cardSurcharge: number;
+  transferSurcharge: number;
+};
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 
 
@@ -341,6 +357,20 @@ export class SupabaseStorage implements IStorage {
     };
   }
 
+  // Helper map Payment
+  private mapPayment(row: any): Payment {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      orderId: row.order_id,
+      amount: parseFloat(row.amount || "0"),
+      method: row.method,
+      date: new Date(row.date),
+      notes: row.notes,
+      items: row.cart_items
+    };
+  }
+
   // Helper map Settings
   private mapSettings(row: any): Settings {
     return {
@@ -349,8 +379,36 @@ export class SupabaseStorage implements IStorage {
       shopName: row.shop_name,
       address: row.address,
       phone: row.phone,
+      email: row.email,
+      whatsapp: row.whatsapp,
+      landline: row.landline,
+      logoUrl: row.logo_url,
+      cardSurcharge: parseFloat(row.card_surcharge || "0"),
+      transferSurcharge: parseFloat(row.transfer_surcharge || "0"), // <--- AGREGADO AQUÍ PARA LEER
       receiptDisclaimer: row.receipt_disclaimer,
       updatedAt: row.updated_at ? new Date(row.updated_at) : null
+    };
+  }
+
+  // --- FUNCIÓN CLAVE QUE FALTABA: ENRICH ORDER ---
+  // Busca el cliente, dispositivo y PAGOS para mostrar totales
+  private async enrichOrder(order: RepairOrder): Promise<RepairOrderWithDetails> {
+    const client = await this.getClient(order.clientId);
+    const device = await this.getDevice(order.deviceId);
+
+    // Buscar pagos
+    const { data: paymentsData } = await supabase
+      .from("payments")
+      .select("*")
+      .eq("order_id", order.id);
+
+    const payments = paymentsData ? paymentsData.map(this.mapPayment) : [];
+
+    return {
+      ...order,
+      client: client!,
+      device: device!,
+      payments
     };
   }
 
@@ -397,7 +455,6 @@ export class SupabaseStorage implements IStorage {
   }
 
   async updateClient(id: string, update: Partial<InsertClient>): Promise<Client | undefined> {
-    // Map keys manually for update
     const payload: any = {};
     if (update.name !== undefined) payload.name = update.name;
     if (update.dni !== undefined) payload.dni = update.dni;
@@ -423,6 +480,11 @@ export class SupabaseStorage implements IStorage {
     return (data || []).map(this.mapDevice);
   }
 
+  async getDevice(id: string): Promise<Device | undefined> {
+    const { data } = await supabase.from("devices").select("*").eq("id", id).single();
+    return data ? this.mapDevice(data) : undefined;
+  }
+
   async createDevice(device: InsertDevice & { userId: string }): Promise<Device> {
     const payload = {
       user_id: device.userId,
@@ -442,46 +504,35 @@ export class SupabaseStorage implements IStorage {
   }
 
   async updateDevice(id: string, data: Partial<InsertDevice>): Promise<Device | undefined> {
-    // Partial Update mapping... simplified for now, assuming standard usage
     const { data: res } = await supabase.from("devices").update(data as any).eq("id", id).select().single();
     return res ? this.mapDevice(res) : undefined;
   }
 
+  // --- GET ORDERS (Actualizado para usar enrichOrder) ---
   async getOrdersWithDetails(userId: string): Promise<RepairOrderWithDetails[]> {
     const { data } = await supabase
       .from("repair_orders")
-      .select(`
-                *,
-                client:clients(*),
-                device:devices(*)
-            `)
+      .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-    return (data || []).map(row => ({
-      ...this.mapOrder(row),
-      client: this.mapClient(row.client),
-      device: this.mapDevice(row.device)
-    }));
+    if (!data) return [];
+
+    // Mapeamos y enriquecemos cada orden para tener los pagos
+    return Promise.all(data.map(row => this.enrichOrder(this.mapOrder(row))));
   }
 
   async getOrderWithDetails(id: string): Promise<RepairOrderWithDetails | undefined> {
     const { data } = await supabase
       .from("repair_orders")
-      .select(`
-                *,
-                client:clients(*),
-                device:devices(*)
-            `)
+      .select("*")
       .eq("id", id)
       .single();
 
     if (!data) return undefined;
-    return {
-      ...this.mapOrder(data),
-      client: this.mapClient(data.client),
-      device: this.mapDevice(data.device)
-    };
+
+    // Usamos enrichOrder para asegurar que vengan los pagos
+    return this.enrichOrder(this.mapOrder(data));
   }
 
   async createOrder(order: InsertRepairOrder & { userId: string }): Promise<RepairOrder> {
@@ -491,9 +542,16 @@ export class SupabaseStorage implements IStorage {
       device_id: order.deviceId,
       problem: order.problem,
       priority: order.priority,
-      estimated_cost: order.estimatedCost.toString(), // Store as string for decimal
+      status: order.status,
+      diagnosis: order.diagnosis,
+      solution: order.solution,
+      technician_name: order.technicianName,
+      // CONVERSIÓN A STRING BLINDADA
+      estimated_cost: String(order.estimatedCost || 0),
+      final_cost: String(order.finalCost || 0),
       estimated_date: order.estimatedDate,
-      intake_checklist: order.intakeChecklist || {}
+      intake_checklist: order.intakeChecklist || {},
+      notes: order.notes
     };
     const { data, error } = await supabase.from("repair_orders").insert(payload).select().single();
     if (error) throw error;
@@ -506,10 +564,15 @@ export class SupabaseStorage implements IStorage {
     if (order.diagnosis) payload.diagnosis = order.diagnosis;
     if (order.solution) payload.solution = order.solution;
     if (order.technicianName) payload.technician_name = order.technicianName;
-    if (order.finalCost !== undefined) payload.final_cost = order.finalCost.toString();
+    if (order.problem) payload.problem = order.problem;
+
+    // CONVERSIÓN A STRING BLINDADA
+    if (order.finalCost !== undefined) payload.final_cost = String(order.finalCost);
+    if (order.estimatedCost !== undefined) payload.estimated_cost = String(order.estimatedCost);
+
     if (order.completedAt) payload.completed_at = order.completedAt;
     if (order.deliveredAt) payload.delivered_at = order.deliveredAt;
-    // ... other fields as needed
+    if (order.notes) payload.notes = order.notes;
 
     const { data, error } = await supabase.from("repair_orders").update(payload).eq("id", id).select().single();
     if (error) return undefined;
@@ -537,11 +600,10 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createPayment(payment: InsertPayment & { userId: string, items: PaymentItem[] }): Promise<Payment> {
-    // Stock Deduction Logic
+    // 1. Lógica de Descuento de Stock (Igual que antes)
     if (payment.items && payment.items.length > 0) {
       for (const item of payment.items) {
         if (item.type === 'product' && item.id) {
-          // Fetch current quantity
           const { data: prod } = await supabase.from("products").select("quantity").eq("id", item.id).single();
           if (prod) {
             const newQty = prod.quantity - item.quantity;
@@ -551,28 +613,31 @@ export class SupabaseStorage implements IStorage {
       }
     }
 
+    // 2. NUEVA LÓGICA: Auto-detectar la Orden dentro del Carrito
+    // Si no viene un orderId explícito, miramos si hay una reparación en los items.
+    let targetOrderId = payment.orderId || null;
+
+    // Si todavía es null, buscamos dentro del carrito
+    if (!targetOrderId && payment.items && payment.items.length > 0) {
+      const repairItem = payment.items.find((item: any) => item.type === 'repair' && item.id) as any;
+      if (repairItem) {
+        targetOrderId = repairItem.id!; // ¡Bingo! Encontramos la orden
+      }
+    }
+
     const payload = {
       user_id: payment.userId,
-      order_id: payment.orderId || null,
+      order_id: targetOrderId, // Usamos el ID que encontramos (o null si era venta solo de productos)
       amount: payment.amount.toString(),
       method: payment.method,
       notes: payment.notes,
-      cart_items: payment.items, // JSON array
+      cart_items: payment.items,
       date: new Date()
     };
 
     const { data, error } = await supabase.from("payments").insert(payload).select().single();
     if (error) throw error;
-    return {
-      id: data.id,
-      userId: data.user_id,
-      orderId: data.order_id,
-      amount: parseFloat(data.amount),
-      method: data.method,
-      date: new Date(data.date),
-      notes: data.notes,
-      items: data.cart_items
-    };
+    return this.mapPayment(data);
   }
 
   async getExpenses(userId: string): Promise<Expense[]> {
@@ -608,14 +673,11 @@ export class SupabaseStorage implements IStorage {
   }
 
   async getStats(userId: string): Promise<any> {
-    // Simple aggregate implementation
-    // 1. Order Counts
     const { data: orders } = await supabase.from("repair_orders").select("status, final_cost").eq("user_id", userId);
     const activeOrders = orders?.filter(o => ["recibido", "diagnostico", "en_curso"].includes(o.status)).length || 0;
     const pendingDiagnosis = orders?.filter(o => o.status === "recibido").length || 0;
     const readyPickup = orders?.filter(o => o.status === "listo").length || 0;
 
-    // 2. Financials (Today)
     const today = new Date().toISOString().split('T')[0];
 
     const { data: payments } = await supabase.from("payments").select("amount").eq("user_id", userId).gte("date", today);
@@ -624,19 +686,13 @@ export class SupabaseStorage implements IStorage {
     const { data: expenses } = await supabase.from("expenses").select("amount").eq("user_id", userId).gte("date", today);
     const dailyExpenses = expenses?.reduce((sum, e) => sum + parseFloat(e.amount), 0) || 0;
 
-    // Cash in Box (Total All Time? Or filtered? Assuming simple daily for now or all time?)
-    // Context: "Cash in Box" usually means current cash on hand.
-    // I will return Net Balance for today as placeholder or 0.
-    // Actually, let's sum ALL cash payments - ALL expenses?
-    // For safety/speed, just return daily stuff.
-
     return {
       activeOrders,
       pendingDiagnosis,
       readyPickup,
       dailyIncome,
       dailyExpenses,
-      cashInBox: dailyIncome - dailyExpenses, // Approximation
+      cashInBox: dailyIncome - dailyExpenses,
       netBalance: dailyIncome - dailyExpenses
     };
   }
@@ -714,9 +770,6 @@ export class SupabaseStorage implements IStorage {
     await supabase.from("products").delete().eq("id", id).eq("user_id", userId);
   }
 
-  // ------------------------------------
-  // TASK 1: Settings Implementation
-  // ------------------------------------
   async getSettings(userId: string): Promise<Settings | undefined> {
     const { data, error } = await supabase
       .from("settings")
@@ -729,13 +782,6 @@ export class SupabaseStorage implements IStorage {
   }
 
   async updateSettings(userId: string, settings: InsertSettings): Promise<Settings> {
-    // Upsert by user_id. 
-    // Note: The table ID is random UUID, but we want 1 setting per user.
-    // We'll check if one exists first or rely on unique constraint if it existed?
-    // Schema doesn't enforce Unique user_id on settings in pgTable def (lines 170+),
-    // but Logic dictates it.
-
-    // Strategy: Try to get existing ID for this user.
     const existing = await this.getSettings(userId);
 
     const payload = {
@@ -743,6 +789,12 @@ export class SupabaseStorage implements IStorage {
       shop_name: settings.shopName,
       address: settings.address,
       phone: settings.phone,
+      email: settings.email,
+      whatsapp: settings.whatsapp,
+      landline: settings.landline,
+      logo_url: settings.logoUrl,
+      card_surcharge: settings.cardSurcharge.toString(),
+      transfer_surcharge: settings.transferSurcharge.toString(), // <--- AGREGADO AQUÍ PARA GUARDAR
       receipt_disclaimer: settings.receiptDisclaimer,
       updated_at: new Date()
     };

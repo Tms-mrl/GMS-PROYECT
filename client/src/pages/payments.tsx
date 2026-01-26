@@ -6,7 +6,8 @@ import {
   type InsertPayment,
   type RepairOrderWithDetails,
   type Product,
-  type PaymentItem
+  type PaymentItem,
+  type Settings
 } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -32,7 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -81,6 +81,10 @@ export default function Payments() {
     queryKey: ["/api/products"],
   });
 
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
+  });
+
   // Filter Active Orders
   const activeOrders = orders.filter(o => o.status !== "entregado" || o.finalCost > 0);
 
@@ -113,16 +117,45 @@ export default function Payments() {
     setCart(cart.filter((_, i) => i !== index));
   };
 
-  const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  // --- CALCULATIONS (CORREGIDO: TARJETA Y TRANSFERENCIA) ---
+  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  let surchargePercent = 0;
+  let surchargeLabel = "";
+
+  if (paymentMethod === "tarjeta") {
+    surchargePercent = settings?.cardSurcharge || 0;
+    surchargeLabel = "Recargo Tarjeta";
+  } else if (paymentMethod === "transferencia") {
+    surchargePercent = settings?.transferSurcharge || 0;
+    surchargeLabel = "Recargo Transferencia";
+  }
+
+  const surchargeAmount = subtotal * (surchargePercent / 100);
+  const totalAmount = subtotal + surchargeAmount;
 
   // --- MUTATION ---
   const createPaymentMutation = useMutation({
     mutationFn: async () => {
+      // 1. Prepare items
+      const finalItems = [...cart];
+
+      // 2. Add surcharge item if applicable
+      if (surchargeAmount > 0) {
+        finalItems.push({
+          type: "other",
+          id: "surcharge", // dummy ID
+          name: `${surchargeLabel} (${surchargePercent}%)`,
+          quantity: 1,
+          price: surchargeAmount
+        });
+      }
+
       const payload: InsertPayment = {
         amount: totalAmount,
         method: paymentMethod,
         notes: saleNotes || (cart.length > 0 ? `Venta de ${cart.length} items` : "Venta general"),
-        items: cart
+        items: finalItems
       };
       const res = await apiRequest("POST", "/api/payments", payload);
       return res.json();
@@ -166,8 +199,7 @@ export default function Payments() {
 
   const filteredPayments = payments.filter((payment) => {
     const searchLower = searchTerm.toLowerCase();
-    const notes = payment.notes.toLowerCase();
-    // Check items via notes or implicit properties (Payment object structure might need deeper check if we search strictly)
+    const notes = (payment.notes || "").toLowerCase();
     return notes.includes(searchLower);
   });
 
@@ -298,9 +330,7 @@ export default function Payments() {
                               <CommandEmpty>No encontrada.</CommandEmpty>
                               <CommandGroup>
                                 {activeOrders.map((order) => {
-                                  // Lógica: Si hay costo final, úsalo. Si no, usa el estimado.
                                   const precioAmostrar = order.finalCost > 0 ? order.finalCost : order.estimatedCost;
-
                                   return (
                                     <CommandItem
                                       key={order.id}
@@ -314,7 +344,6 @@ export default function Payments() {
                                       <div className="flex flex-col">
                                         <span className="font-medium">{order.client.name}</span>
                                         <span className="text-xs text-muted-foreground">
-                                          {/* Aquí usamos la variable inteligente */}
                                           {order.device.model} | Total: {formatMoney(precioAmostrar)}
                                         </span>
                                       </div>
@@ -338,7 +367,6 @@ export default function Payments() {
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Costo Total:</span>
                             <span className="font-bold">
-                              {/* Visualización */}
                               {formatMoney(selectedOrder.finalCost > 0 ? selectedOrder.finalCost : selectedOrder.estimatedCost)}
                             </span>
                           </div>
@@ -346,17 +374,24 @@ export default function Payments() {
                         <Button
                           className="w-full"
                           onClick={() => {
-                            // --- LÓGICA IMPORTANTE PARA EL CARRITO ---
-                            // Si el final es 0, usamos el estimado
-                            const precioReal = selectedOrder.finalCost > 0 ? selectedOrder.finalCost : selectedOrder.estimatedCost;
+                            const fullCost = selectedOrder.finalCost > 0 ? selectedOrder.finalCost : selectedOrder.estimatedCost;
+                            const totalPaid = selectedOrder.payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+                            const balance = Math.max(0, fullCost - totalPaid);
+
+                            if (balance <= 0) {
+                              toast({
+                                title: "Orden Pagada",
+                                description: "Esta orden ya no tiene saldo pendiente.",
+                                variant: "default"
+                              });
+                              return;
+                            }
 
                             addToCart({
                               type: "repair",
                               id: selectedOrder.id,
-                              name: `Reparación ${selectedOrder.device.model} - ${selectedOrder.client.name}`,
-
-                              price: precioReal, // <--- ESTO ES LO QUE ARREGLA EL COBRO EN $0
-
+                              name: `Reparación ${selectedOrder.device.model} - ${selectedOrder.client.name} (Saldo)`,
+                              price: balance,
                               quantity: 1
                             });
                             setSelectedOrder(null);
@@ -450,10 +485,30 @@ export default function Payments() {
                   )}
                 </div>
 
+                {/* --- FOOTER DEL CARRITO (ESTILIZADO) --- */}
                 <div className="p-4 border-t bg-muted/20 space-y-4">
-                  <div className="flex justify-between items-center text-lg font-bold">
-                    <span>Total a Pagar</span>
-                    <span>{formatMoney(totalAmount)}</span>
+                  <div className="space-y-2">
+                    {surchargeAmount > 0 ? (
+                      <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded-md text-sm text-yellow-800 dark:text-yellow-200 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Subtotal:</span>
+                          <span>{formatMoney(subtotal)}</span>
+                        </div>
+                        <div className="flex justify-between font-medium">
+                          <span>+ {surchargeLabel} ({surchargePercent}%):</span>
+                          <span>{formatMoney(surchargeAmount)}</span>
+                        </div>
+                        <div className="border-t border-yellow-300 dark:border-yellow-800 pt-1 mt-1 flex justify-between font-bold text-base">
+                          <span>Total Final:</span>
+                          <span>{formatMoney(totalAmount)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-center text-lg font-bold pt-2 border-t">
+                        <span>Total a Pagar</span>
+                        <span>{formatMoney(totalAmount)}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -537,7 +592,6 @@ export default function Payments() {
                     )}
                   </TableCell>
 
-                  {/* ESTA ES LA CELDA CORREGIDA */}
                   <TableCell>
                     <div className="flex flex-col gap-1">
                       {payment.items && payment.items.length > 0 ? (

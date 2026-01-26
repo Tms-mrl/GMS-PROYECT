@@ -51,15 +51,48 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
 
   const sendSupportRequest = useMutation({
     mutationFn: async (data: SupportFormValues) => {
-      const formData = new FormData();
-      formData.append("message", data.message);
+      // 1. Upload Images First (if any)
+      const uploadedUrls: string[] = [];
 
-      images.forEach((image, index) => {
-        formData.append(`images`, image);
-      });
+      if (images.length > 0) {
+        // Enviar toast de progreso
+        toast({ title: "Subiendo imágenes...", description: "Por favor espere." });
+
+        for (const image of images) {
+          const formData = new FormData();
+          formData.append("file", image);
+
+          const { data: { session } } = await supabase.auth.getSession();
+          const headers: Record<string, string> = {};
+          if (session?.access_token) {
+            headers["Authorization"] = `Bearer ${session.access_token}`;
+          }
+
+          const uploadRes = await fetch("/api/upload", {
+            method: "POST",
+            headers,
+            body: formData,
+          });
+
+          if (!uploadRes.ok) {
+            throw new Error(`Error al subir imagen: ${image.name}`);
+          }
+
+          const uploadData = await uploadRes.json();
+          uploadedUrls.push(uploadData.url);
+        }
+      }
+
+      // 2. Send Support Ticket with URLs
+      const payload = {
+        message: data.message,
+        imageUrls: uploadedUrls, // Enviar URLs
+      };
 
       const { data: { session } } = await supabase.auth.getSession();
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
       if (session?.access_token) {
         headers["Authorization"] = `Bearer ${session.access_token}`;
       }
@@ -67,8 +100,7 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
       const res = await fetch("/api/support", {
         method: "POST",
         headers,
-        body: formData,
-        credentials: "include",
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -88,7 +120,7 @@ export function SupportDialog({ open, onOpenChange }: SupportDialogProps) {
     onSuccess: () => {
       toast({
         title: "Mensaje enviado",
-        description: "Tu solicitud de soporte ha sido enviada correctamente"
+        description: "Tu solicitud de soporte ha sido enviada correctamente al equipo."
       });
       form.reset();
       setImages([]);

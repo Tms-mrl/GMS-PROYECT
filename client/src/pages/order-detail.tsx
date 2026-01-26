@@ -10,7 +10,8 @@ import {
   Save,
   Printer,
   ChevronRight,
-  Plus
+  Plus,
+  MessageCircle // <--- Import del icono
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,12 +67,25 @@ export default function OrderDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders", orderId] });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
-      toast({ title: "Orden actualizada" });
+      toast({
+        title: "Orden actualizada correctamente",
+        description: "Los cambios han sido guardados exitosamente.",
+      });
     },
     onError: () => {
       toast({ title: "Error al actualizar", variant: "destructive" });
     },
   });
+
+  // --- LÓGICA WHATSAPP ---
+  const openWhatsApp = (e: React.MouseEvent, phone: string | null | undefined) => {
+    e.preventDefault(); // Evita navegar al perfil del cliente
+    e.stopPropagation(); // Evita bubbling
+
+    if (!phone) return;
+    const cleanPhone = phone.replace(/\D/g, '');
+    window.open(`https://wa.me/${cleanPhone}`, '_blank');
+  };
 
   if (isLoading) {
     return (
@@ -105,11 +119,18 @@ export default function OrderDetail() {
   const currentData = { ...order, ...formData };
 
   // Calculate finances
-  const totalPaid = order.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
+  const totalPaid = order.payments?.reduce((sum, p) => {
+    if (p.items && p.items.length > 0) {
+      const repairPayment = p.items
+        .filter((i: any) => i.type === 'repair' || (!i.type && !i.name.toLowerCase().includes('recargo')))
+        .reduce((s: number, i: any) => s + Number(i.price || 0), 0);
+      return sum + repairPayment;
+    }
+    return sum + Number(p.amount);
+  }, 0) ?? 0;
   const final = currentData.finalCost ?? 0;
   const estimated = currentData.estimatedCost ?? 0;
 
-  // Logic: Use final cost if > 0, else estimated cost. If both 0, cost not defined.
   const totalCost = final > 0 ? final : estimated;
   const isCostDefined = totalCost > 0;
   const balance = Math.max(0, totalCost - totalPaid);
@@ -124,6 +145,10 @@ export default function OrderDetail() {
         open={isPaymentDialogOpen}
         onOpenChange={setIsPaymentDialogOpen}
         defaultOrderId={orderId}
+        onPaymentSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/orders", orderId] });
+          queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+        }}
       />
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -193,7 +218,7 @@ export default function OrderDetail() {
                 <div>
                   <Label>Técnico Asignado</Label>
                   <Input
-                    value={currentData.technicianName}
+                    value={currentData.technicianName || ""}
                     onChange={(e) => setFormData({ ...formData, technicianName: e.target.value })}
                     placeholder="Nombre del técnico"
                     data-testid="input-technician"
@@ -214,7 +239,7 @@ export default function OrderDetail() {
               <div>
                 <Label>Diagnóstico</Label>
                 <Textarea
-                  value={currentData.diagnosis}
+                  value={currentData.diagnosis || ""}
                   onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
                   placeholder="Resultado del diagnóstico técnico..."
                   className="min-h-20"
@@ -225,7 +250,7 @@ export default function OrderDetail() {
               <div>
                 <Label>Solución / Trabajo Realizado</Label>
                 <Textarea
-                  value={currentData.solution}
+                  value={currentData.solution || ""}
                   onChange={(e) => setFormData({ ...formData, solution: e.target.value })}
                   placeholder="Describe el trabajo realizado..."
                   className="min-h-20"
@@ -236,7 +261,7 @@ export default function OrderDetail() {
               <div>
                 <Label>Notas Internas</Label>
                 <Textarea
-                  value={currentData.notes}
+                  value={currentData.notes || ""}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   placeholder="Notas adicionales..."
                   data-testid="input-notes"
@@ -310,7 +335,7 @@ export default function OrderDetail() {
                 <div className="pt-4 border-t">
                   <Label className="mb-2 block">Historial de Pagos</Label>
                   <div className="space-y-2">
-                    {/* ... dentro de <CardContent> ... Historial de Pagos */}
+                    {/* Historial de Pagos */}
                     <div className="space-y-2">
                       {order.payments.map((payment: Payment) => (
                         <div key={payment.id} className="flex flex-col space-y-1 text-sm py-2 px-3 bg-muted rounded-md">
@@ -321,14 +346,12 @@ export default function OrderDetail() {
                             </span>
                           </div>
 
-
                           <div className="text-xs text-muted-foreground">
                             {payment.items && payment.items.length > 0 ? (
                               <div className="flex flex-col gap-1 mt-1">
                                 {payment.items.map((item: any, idx: number) => (
                                   <span key={idx} className="flex justify-between">
                                     <span>• {item.quantity}x {item.name}</span>
-
                                   </span>
                                 ))}
                                 {payment.notes && <span className="italic mt-1 border-t pt-1">Nota: "{payment.notes}"</span>}
@@ -351,6 +374,7 @@ export default function OrderDetail() {
         </div>
 
         <div className="space-y-6">
+          {/* TARJETA DE CLIENTE CON BOTÓN DE WHATSAPP */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -363,7 +387,20 @@ export default function OrderDetail() {
                 <div className="hover-elevate rounded-md p-3 -m-3 cursor-pointer flex items-center justify-between" data-testid="link-client">
                   <div>
                     <p className="font-medium">{order.client.name}</p>
-                    <p className="text-sm text-muted-foreground">{order.client.phone}</p>
+                    {/* Fila del teléfono + Botón WhatsApp */}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-sm text-muted-foreground">{order.client.phone}</p>
+                      {order.client.phone && (
+                        <div
+                          role="button"
+                          onClick={(e) => openWhatsApp(e, order.client.phone)}
+                          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 border border-green-600/40 text-green-600 hover:bg-green-900/30 hover:border-green-500/60 hover:text-green-400 transition-all cursor-pointer backdrop-blur-sm"
+                          title="Enviar WhatsApp"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </div>
+                      )}
+                    </div>
                     {order.client.email && (
                       <p className="text-sm text-muted-foreground">{order.client.email}</p>
                     )}

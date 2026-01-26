@@ -1,13 +1,14 @@
 import { useRoute, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { 
-  ArrowLeft, 
-  Phone, 
-  Mail, 
-  MapPin, 
+import {
+  ArrowLeft,
+  Phone,
+  Mail,
+  MapPin,
   Smartphone,
   ClipboardList,
-  Edit
+  Edit,
+  MessageCircle // Icono WhatsApp
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,13 @@ export default function ClientDetail() {
     queryKey: ["/api/clients", clientId, "orders"],
     enabled: !!clientId,
   });
+
+  // --- LÓGICA WHATSAPP ---
+  const openWhatsApp = (phone: string | null | undefined) => {
+    if (!phone) return;
+    const cleanPhone = phone.replace(/\D/g, '');
+    window.open(`https://wa.me/${cleanPhone}`, '_blank');
+  };
 
   if (clientLoading) {
     return (
@@ -92,20 +100,39 @@ export default function ClientDetail() {
             <CardTitle className="text-base">Información de Contacto</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+
+            {/* SECCIÓN TELÉFONO */}
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                <Phone className="h-5 w-5 text-primary" />
+              {/* Icono Izquierda (Talla h-9 para igualar) */}
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+                <Phone className="h-4 w-4 text-primary" />
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="text-sm text-muted-foreground">Teléfono</p>
-                <p className="font-medium">{client.phone}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium">{client.phone}</p>
+
+                  {/* BOTÓN WHATSAPP (Ajustado: subido con -translate-y-2) */}
+                  {client.phone && (
+                    <div
+                      role="button"
+                      onClick={() => openWhatsApp(client.phone)}
+                      // Agregado -translate-y-2 para alinear centros geométricos
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 border border-green-600/40 text-green-600 hover:bg-green-900/30 hover:border-green-500/60 hover:text-green-400 transition-all cursor-pointer backdrop-blur-sm -translate-y-2"
+                      title="Enviar mensaje por WhatsApp"
+                    >
+                      <MessageCircle className="h-5 w-5" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
+            {/* SECCIÓN EMAIL */}
             {client.email && (
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                  <Mail className="h-5 w-5 text-primary" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+                  <Mail className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Email</p>
@@ -114,10 +141,11 @@ export default function ClientDetail() {
               </div>
             )}
 
+            {/* SECCIÓN DIRECCIÓN */}
             {client.address && (
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                  <MapPin className="h-5 w-5 text-primary" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+                  <MapPin className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Dirección</p>
@@ -153,8 +181,8 @@ export default function ClientDetail() {
               ) : devices && devices.length > 0 ? (
                 <div className="space-y-3">
                   {devices.map((device) => (
-                    <div 
-                      key={device.id} 
+                    <div
+                      key={device.id}
                       className="flex items-center justify-between p-3 rounded-md bg-muted/50"
                       data-testid={`device-${device.id}`}
                     >
@@ -197,14 +225,14 @@ export default function ClientDetail() {
                 <div className="space-y-3">
                   {orders.map((order) => (
                     <Link key={order.id} href={`/ordenes/${order.id}`}>
-                      <div 
+                      <div
                         className="flex items-center justify-between p-3 rounded-md bg-muted/50 hover-elevate cursor-pointer"
                         data-testid={`order-${order.id}`}
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{order.device.brand} {order.device.model}</p>
-                            <StatusBadge status={order.status} showIcon={false} />
+                            <StatusBadge status={order.status as any} showIcon={false} />
                           </div>
                           <p className="text-sm text-muted-foreground truncate">{order.problem}</p>
                           <p className="text-xs text-muted-foreground">

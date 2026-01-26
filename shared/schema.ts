@@ -13,7 +13,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // --------------------------------------------------------------------------
-// 1. CONSTANTES Y LEGACY (Lo que el Frontend necesita para no romperse)
+// 1. CONSTANTES
 // --------------------------------------------------------------------------
 export const orderStatuses = ["recibido", "diagnostico", "en_curso", "listo", "entregado"] as const;
 export type OrderStatus = typeof orderStatuses[number];
@@ -21,7 +21,6 @@ export type OrderStatus = typeof orderStatuses[number];
 export const paymentMethods = ["efectivo", "tarjeta", "transferencia"] as const;
 export type PaymentMethod = typeof paymentMethods[number];
 
-// --- RESTAURADO: CHECKLIST SCHEMA (Para evitar el error del plugin) ---
 export const checklistValue = z.enum(["yes", "no", "unknown"]);
 export type ChecklistValue = z.infer<typeof checklistValue>;
 
@@ -33,7 +32,6 @@ export const intakeChecklistSchema = z.object({
   openedBefore: checklistValue.optional(),
   inWarranty: checklistValue.optional(),
 });
-// --------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------
 // 2. DEFINICIÓN DE TABLAS (Drizzle)
@@ -143,13 +141,19 @@ export const expenses = pgTable("expenses", {
   date: timestamp("date").notNull().defaultNow(),
 });
 
-// --- SETTINGS ---
+// --- SETTINGS (AQUÍ AGREGAMOS transferSurcharge) ---
 export const settings = pgTable("settings", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
   shopName: text("shop_name").notNull().default("Mi Taller"),
   address: text("address").default(""),
   phone: text("phone").default(""),
+  email: text("email").default(""),
+  whatsapp: text("whatsapp").default(""),
+  landline: text("landline").default(""),
+  logoUrl: text("logo_url").default(""),
+  cardSurcharge: decimal("card_surcharge", { precision: 10, scale: 2 }).default("0"),
+  transferSurcharge: decimal("transfer_surcharge", { precision: 10, scale: 2 }).default("0"), // <--- NUEVO CAMPO
   receiptDisclaimer: text("receipt_disclaimer").default("Garantía de 30 días."),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -165,20 +169,22 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
 // Clients
-export const insertClientSchema = createInsertSchema(clients);
+export const insertClientSchema = createInsertSchema(clients).omit({ userId: true, id: true });
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = z.infer<typeof insertClientSchema>;
 
 // Devices
-export const insertDeviceSchema = createInsertSchema(devices);
+export const insertDeviceSchema = createInsertSchema(devices).omit({ userId: true, id: true });
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 
-// Repair Orders (Hack para decimales)
+// Repair Orders
 export const insertRepairOrderSchema = createInsertSchema(repairOrders, {
   estimatedCost: z.coerce.number(),
-  finalCost: z.coerce.number()
-});
+  finalCost: z.coerce.number(),
+  estimatedDate: z.coerce.date()
+}).omit({ userId: true, id: true });
+
 export type RepairOrder = Omit<typeof repairOrders.$inferSelect, "estimatedCost" | "finalCost"> & {
   estimatedCost: number;
   finalCost: number;
@@ -190,7 +196,8 @@ export const insertProductSchema = createInsertSchema(products, {
   price: z.coerce.number(),
   cost: z.coerce.number(),
   quantity: z.coerce.number(),
-});
+}).omit({ userId: true, id: true });
+
 export type Product = Omit<typeof products.$inferSelect, "price" | "cost"> & {
   price: number;
   cost: number;
@@ -212,10 +219,10 @@ export type Payment = Omit<typeof payments.$inferSelect, "amount"> & {
 };
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 
-// Expenses (Arregla el Error 400 y el type mismatch)
+// Expenses
 export const insertExpenseSchema = createInsertSchema(expenses, {
-  date: z.coerce.date(),     // Convierte string ISO a Date
-  amount: z.coerce.number()  // Convierte "12000" a 12000
+  date: z.coerce.date(),
+  amount: z.coerce.number()
 }).pick({
   category: true,
   description: true,
@@ -227,14 +234,26 @@ export type Expense = Omit<typeof expenses.$inferSelect, "amount"> & {
 };
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
-// Settings
-export const insertSettingsSchema = createInsertSchema(settings).pick({
+// Settings (AQUÍ HABILITAMOS EL CAMPO NUEVO)
+export const insertSettingsSchema = createInsertSchema(settings, {
+  cardSurcharge: z.coerce.number(),
+  transferSurcharge: z.coerce.number(), // <--- COERCIÓN AGREGADA
+}).pick({
   shopName: true,
   address: true,
   phone: true,
+  email: true,
+  whatsapp: true,
+  landline: true,
+  logoUrl: true,
+  cardSurcharge: true,
+  transferSurcharge: true, // <--- CAMPO PERMITIDO
   receiptDisclaimer: true,
 });
-export type Settings = typeof settings.$inferSelect;
+export type Settings = Omit<typeof settings.$inferSelect, "cardSurcharge" | "transferSurcharge"> & {
+  cardSurcharge: number;
+  transferSurcharge: number;
+};
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 
 // Relations

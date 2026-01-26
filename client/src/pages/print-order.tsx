@@ -2,7 +2,7 @@ import { useRoute, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { RepairOrderWithDetails } from "@shared/schema";
+import type { RepairOrderWithDetails, Settings } from "@shared/schema";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useEffect, useState } from "react";
@@ -10,48 +10,45 @@ import { Printer, ArrowLeft, Edit } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
-const DEFAULT_TERMS = "La empresa no se hace responsable por pérdida de información. Equipos no retirados en 30 días pasarán a bodega. Garantía de 30 días sobre la reparación realizada.";
-
 export default function PrintOrder() {
     const [, params] = useRoute("/ordenes/:id/print");
     const orderId = params?.id;
     const [isReadyToPrint, setIsReadyToPrint] = useState(false);
 
-    // Terms & Conditions State
-    const [termsContent, setTermsContent] = useState(DEFAULT_TERMS);
-    const [isEditingTerms, setIsEditingTerms] = useState(false);
-
-    useEffect(() => {
-        // Load terms from localStorage on mount
-        const savedTerms = localStorage.getItem("printTerms");
-        if (savedTerms) {
-            setTermsContent(savedTerms);
-        }
-    }, []);
-
-    const handleSaveTerms = () => {
-        localStorage.setItem("printTerms", termsContent);
-        setIsEditingTerms(false);
-    };
-
-    const { data: order, isLoading } = useQuery<RepairOrderWithDetails>({
+    // Fetch Order
+    const { data: order, isLoading: isLoadingOrder } = useQuery<RepairOrderWithDetails>({
         queryKey: ["/api/orders", orderId],
         enabled: !!orderId,
     });
 
+    // Fetch Settings (Para datos reales del taller)
+    const { data: settings, isLoading: isLoadingSettings } = useQuery<Settings>({
+        queryKey: ["/api/settings"],
+    });
+
+    // Terms State
+    const [termsContent, setTermsContent] = useState("");
+    const [isEditingTerms, setIsEditingTerms] = useState(false);
+
+    // Sincronizar términos con la configuración cuando cargue
     useEffect(() => {
-        if (order && !isLoading) {
-            // Small delay to ensure rendering is complete (including icons/fonts)
+        if (settings?.receiptDisclaimer) {
+            setTermsContent(settings.receiptDisclaimer);
+        }
+    }, [settings]);
+
+    // Auto-print logic
+    useEffect(() => {
+        if (order && settings && !isLoadingOrder && !isLoadingSettings) {
             const timer = setTimeout(() => {
                 setIsReadyToPrint(true);
-                // Auto-print disabled to allow reviewing layout first, or re-enable if desired behavior
-                window.print();
+                // window.print(); // Descomentar para imprimir automático
             }, 500);
             return () => clearTimeout(timer);
         }
-    }, [order, isLoading]);
+    }, [order, settings, isLoadingOrder, isLoadingSettings]);
 
-    if (isLoading) {
+    if (isLoadingOrder || isLoadingSettings) {
         return (
             <div className="p-8 space-y-6 max-w-[21cm] mx-auto">
                 <Skeleton className="h-24 w-full" />
@@ -72,13 +69,28 @@ export default function PrintOrder() {
         );
     }
 
-    // Common Header for both copies
+    // --- HEADER COMPONENT (Dinámico) ---
     const Header = ({ title }: { title: string }) => (
-        <div className="flex justify-between items-start border-b border-black pb-2 mb-2">
-            <div>
-                <h1 className="text-xl font-bold uppercase tracking-tight">RepairShop</h1>
-                <p className="text-[10px]">Servicio Técnico Especializado</p>
-                <p className="text-[10px]">Av. Principal 123, Ciudad | (555) 123-4567</p>
+        <div className="flex justify-between items-start border-b border-black pb-2 mb-2 h-20">
+            <div className="flex gap-4 items-center">
+                {/* Logo si existe */}
+                {settings?.logoUrl && (
+                    <img
+                        src={settings.logoUrl}
+                        alt="Logo"
+                        className="h-16 w-16 object-contain"
+                    />
+                )}
+                <div>
+                    <h1 className="text-xl font-bold uppercase tracking-tight leading-none">
+                        {settings?.shopName || "SERVICIO TÉCNICO"}
+                    </h1>
+                    <p className="text-[10px] font-semibold mt-1">Servicio Técnico Especializado</p>
+                    <p className="text-[10px]">{settings?.address}</p>
+                    <p className="text-[10px]">
+                        {[settings?.phone, settings?.email].filter(Boolean).join(" | ")}
+                    </p>
+                </div>
             </div>
             <div className="text-right">
                 <div className="text-lg font-bold">ORDEN #{order.id.slice(0, 8)}</div>
@@ -92,23 +104,26 @@ export default function PrintOrder() {
         </div>
     );
 
-    // --- CUSTOMER COPY COMPONENT ---
+    // --- CUSTOMER COPY (70/30 Layout) ---
     const CustomerCopy = () => (
         <div className="flex flex-col h-full relative">
             <Header title="COMPROBANTE CLIENTE" />
 
             <div className="flex-1 flex flex-col gap-2 min-h-0">
-                {/* Main Grid: Client Basic & Fees / Device */}
-                <div className="grid grid-cols-2 gap-4 text-xs">
+                {/* 70/30 Grid */}
+                <div className="grid grid-cols-[70%_30%] gap-4 text-xs">
                     <div>
                         <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Cliente</h3>
-                        <p>{order.client.name}</p>
-                        <p>{order.client.phone} / {order.client.email}</p>
+                        <p className="font-semibold">{order.client.name}</p>
+                        <p>{order.client.phone}</p>
+                        <p className="truncate">{order.client.email}</p>
+                        {order.client.address && <p className="truncate text-[10px] text-gray-600">{order.client.address}</p>}
                     </div>
                     <div>
                         <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Dispositivo</h3>
-                        <p><span className="font-semibold">Modelo:</span> {order.device.brand} {order.device.model}</p>
-                        <p><span className="font-semibold">IMEI/SN:</span> {order.device.imei || order.device.serialNumber || 'N/A'}</p>
+                        <p className="font-bold">{order.device.brand}</p>
+                        <p>{order.device.model}</p>
+                        <p className="text-[10px] mt-1">IMEI: {order.device.imei || '-'}</p>
                     </div>
                 </div>
 
@@ -118,25 +133,22 @@ export default function PrintOrder() {
                         <span className="font-bold mr-2">Total Estimado:</span>
                         ${order.estimatedCost.toFixed(2)}
                     </div>
-                    {/* Add deposit/due logic here if available in schema */}
                     <div>
                         <span className="font-bold mr-2">A Pagar:</span>
                         ${order.estimatedCost.toFixed(2)}
                     </div>
                 </div>
 
-                {/* Terms and Conditions - Fills remaining height */}
+                {/* Terms */}
                 <div className="flex-1 border border-black p-2 mt-2 flex flex-col min-h-0">
                     <h3 className="font-bold text-[10px] mb-1">TÉRMINOS Y CONDICIONES</h3>
-                    {/* Use overflow-hidden to prevent page break if text is massive, 
-                        though requirement says fill height. Flex-1 does that. */}
-                    <div className="text-[10px] leading-tight text-justify overflow-y-hidden whitespace-pre-wrap flex-grow">
-                        {termsContent}
+                    <div className="text-[9px] leading-tight text-justify overflow-y-hidden whitespace-pre-wrap flex-grow">
+                        {termsContent || settings?.receiptDisclaimer || "Sin términos definidos."}
                     </div>
                 </div>
             </div>
 
-            {/* Signature Area */}
+            {/* Signature */}
             <div className="mt-4 pt-4 border-t border-black flex justify-between text-[10px]">
                 <div className="w-1/3 text-center">
                     <div className="border-t border-black my-4"></div>
@@ -150,49 +162,45 @@ export default function PrintOrder() {
         </div>
     );
 
-    // --- TECHNICIAN COPY COMPONENT ---
+    // --- TECHNICIAN COPY (70/30 + Compact Checklist) ---
     const TechnicianCopy = () => (
         <div className="flex flex-col h-full relative">
             <Header title="ORDEN DE TALLER" />
 
             <div className="flex-1 flex flex-col gap-2 min-h-0 text-xs text-black">
-                {/* Detailed Info Grid */}
-                <div className="grid grid-cols-2 gap-4">
-                    {/* Full Client Info */}
+                {/* 70/30 Grid */}
+                <div className="grid grid-cols-[70%_30%] gap-4">
                     <div>
                         <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Detalle Cliente</h3>
-                        <p className="truncate"><span className="font-semibold">Nombre:</span> {order.client.name}</p>
-                        <p className="truncate"><span className="font-semibold">Tel/WS:</span> {order.client.phone}</p>
-                        {order.client.email && <p className="truncate"><span className="font-semibold">Email:</span> {order.client.email}</p>}
-                        {order.client.address && <p className="truncate"><span className="font-semibold">Dir:</span> {order.client.address}</p>}
+                        <p className="font-semibold">{order.client.name}</p>
+                        <p>Tel: {order.client.phone}</p>
+                        {order.client.notes && <p className="italic text-[10px] mt-1">"{order.client.notes}"</p>}
                     </div>
 
-                    {/* Full Device Info */}
                     <div>
-                        <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Detalle Equipo</h3>
-                        <p><span className="font-semibold">Equipo:</span> {order.device.brand} {order.device.model}</p>
-                        <p><span className="font-semibold">Color:</span> {order.device.color} | <span className="font-semibold">Cond:</span> {order.device.condition}</p>
-                        <p><span className="font-semibold">IMEI:</span> {order.device.imei || '-'}</p>
-                        <p><span className="font-semibold">SN:</span> {order.device.serialNumber || '-'}</p>
+                        <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Equipo</h3>
+                        <p>{order.device.brand} {order.device.model}</p>
+                        <p>Color: {order.device.color}</p>
+                        <p>Patrón: {order.device.lockValue || 'N/A'}</p>
                     </div>
                 </div>
 
-                {/* Problem & Notes */}
-                <div className="border border-black p-2 mt-1">
-                    <p><span className="font-bold">Problema:</span> {order.problem}</p>
-                    {order.notes && <p className="mt-1 border-t border-dashed border-gray-400 pt-1"><span className="font-bold">Notas Internas:</span> {order.notes}</p>}
+                {/* Problem */}
+                <div className="border border-black p-2 mt-1 bg-gray-50">
+                    <p><span className="font-bold">Problema Reportado:</span> {order.problem}</p>
+                    {order.notes && <p className="mt-1 border-t border-dashed border-gray-300 pt-1 text-[10px]"><span className="font-bold">Notas Internas:</span> {order.notes}</p>}
                 </div>
 
-                {/* Intake Checklist */}
-                <div className="flex-1 mt-1 border border-black p-2 min-h-0 overflow-y-auto">
-                    <h3 className="font-bold border-b border-black mb-1 uppercase text-[10px]">Checklist de Ingreso</h3>
-                    <div className="grid grid-cols-3 gap-x-2 gap-y-1 text-[10px]">
+                {/* COMPACT CHECKLIST (4 Columnas) */}
+                <div className="flex-1 mt-1 border border-black p-1 min-h-0 overflow-y-auto">
+                    <h3 className="font-bold border-b border-black mb-1 uppercase text-[9px]">Estado de Ingreso</h3>
+                    <div className="grid grid-cols-4 gap-x-2 gap-y-0 text-[9px]"> {/* 4 Cols + Menos espacio vertical */}
                         {order.intakeChecklist && typeof order.intakeChecklist === 'object' ? (
                             Object.entries(order.intakeChecklist).map(([key, value]) => (
-                                <div key={key} className="flex items-center justify-between border-b border-gray-100 pb-0.5">
-                                    <span className="capitalize truncate mr-1">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                                <div key={key} className="flex items-center justify-between border-b border-gray-100">
+                                    <span className="capitalize truncate mr-1 text-gray-600">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
                                     <span className={`font-bold ${value === true || value === 'yes' ? 'text-black' :
-                                        value === false || value === 'no' ? 'text-gray-400' : 'text-gray-600'
+                                            value === false || value === 'no' ? 'text-gray-300' : 'text-gray-500'
                                         }`}>
                                         {value === true || value === 'yes' ? 'SI' :
                                             value === false || value === 'no' ? 'NO' :
@@ -201,16 +209,17 @@ export default function PrintOrder() {
                                 </div>
                             ))
                         ) : (
-                            <p className="col-span-3 text-gray-500 italic">No hay checklist registrado.</p>
+                            <p className="col-span-4 text-gray-400 italic">Sin checklist.</p>
                         )}
                     </div>
                 </div>
             </div>
 
             {/* Tech Footer */}
-            <div className="mt-2 pt-2 border-t border-black text-[10px] flex justify-between">
+            <div className="mt-2 pt-2 border-t border-black text-[10px] flex justify-between items-end">
                 <div>
-                    <p>ID Interno: {order.id}</p>
+                    <p>ID Interno: <span className="font-mono text-xs">{order.id}</span></p>
+                    <p className="text-[9px] text-gray-500">Impreso: {format(new Date(), "dd/MM/yy HH:mm")}</p>
                 </div>
                 <div className="w-1/3 text-center">
                     <div className="border-t border-black my-4"></div>
@@ -222,7 +231,7 @@ export default function PrintOrder() {
 
     return (
         <div className="min-h-screen bg-gray-100 text-black font-sans">
-            {/* Screen-only Controls */}
+            {/* Controles de Pantalla */}
             <div className="print:hidden p-4 bg-white shadow-sm mb-4 flex justify-between items-center sticky top-0 z-50">
                 <Button variant="outline" asChild>
                     <Link href={`/ordenes/${orderId}`}>
@@ -243,53 +252,47 @@ export default function PrintOrder() {
                 </div>
             </div>
 
-            {/* Edit Terms Dialog */}
+            {/* Modal Editar Términos */}
             <Dialog open={isEditingTerms} onOpenChange={setIsEditingTerms}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Editar Términos y Condiciones</DialogTitle>
+                        <DialogTitle>Editar Términos (Vista Previa)</DialogTitle>
                     </DialogHeader>
                     <div className="py-4">
                         <Textarea
                             value={termsContent}
                             onChange={(e) => setTermsContent(e.target.value)}
                             className="min-h-[150px]"
-                            placeholder="Ingrese los términos y condiciones..."
                         />
-                        <p className="text-xs text-muted-foreground mt-2">
-                            Afecta solo a la impresión actual en este navegador.
-                        </p>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsEditingTerms(false)}>Cancelar</Button>
-                        <Button onClick={handleSaveTerms}>Guardar</Button>
+                        <Button onClick={() => setIsEditingTerms(false)}>Listo</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            {/* PRINT CONTAINER / SHEET */}
+            {/* HOJA DE IMPRESIÓN (A4) */}
             <div id="printable-area" className="mx-auto bg-white shadow-lg print:shadow-none print:m-0 print:p-0 overflow-hidden"
-                style={{ width: '210mm', height: '296mm' }} // Slightly less than 297 to be safe
+                style={{ width: '210mm', height: '296mm' }}
             >
-                {/* Using flex column to split the page exactly in half (or weighted) */}
                 <div className="flex flex-col h-full p-[10mm]">
 
-                    {/* CUSTOMER COPY SECTION - Flex grow to fill top half approx */}
+                    {/* COPIA CLIENTE (Flex-1 para llenar mitad superior) */}
                     <div className="flex-1 min-h-0 pb-4">
                         <CustomerCopy />
                     </div>
 
-                    {/* SEPARATOR */}
+                    {/* LÍNEA DE CORTE */}
                     <div className="border-b-2 border-dashed border-gray-400 w-full my-2 relative">
                         <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-[10px] text-gray-500 rotate-180 print:block hidden">
-                            CORTAR AQUÍ
+                            ✄ CORTAR AQUÍ
                         </span>
                         <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-[10px] text-gray-500 block print:hidden">
-                            LÍNEA DE CORTE
+                            --- LÍNEA DE CORTE ---
                         </span>
                     </div>
 
-                    {/* TECHNICIAN COPY SECTION - Flex grow to fill bottom half approx */}
+                    {/* COPIA TALLER (Flex-1 para llenar mitad inferior) */}
                     <div className="flex-1 min-h-0 pt-4">
                         <TechnicianCopy />
                     </div>
@@ -298,27 +301,21 @@ export default function PrintOrder() {
             </div>
 
             <style>{`
-                    @media print {
+                @media print {
                     @page {
                         size: A4;
                         margin: 0; 
                     }
-
-                    /* ESTO ES LO QUE FALTABA: */
                     html, body {
-                        height: 100vh; 
                         height: 297mm; 
-                        overflow: hidden !important; /* Corta radicalmente el scroll */
+                        overflow: hidden !important; 
                     }
-
                     body * {
                         visibility: hidden; 
                     }
-
                     #printable-area, #printable-area * {
                         visibility: visible;
                     }
-
                     #printable-area {
                         position: fixed;
                         left: 0;
@@ -329,7 +326,6 @@ export default function PrintOrder() {
                         padding: 0 !important;
                         z-index: 9999;
                         overflow: hidden !important; 
-
                         page-break-after: avoid !important;
                         break-after: avoid !important;
                     }

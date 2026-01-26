@@ -10,7 +10,8 @@ import {
   ArrowRight,
   Wallet,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  MessageCircle // Import del icono
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +35,9 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { InsertExpense } from "@shared/schema";
+import type { InsertExpense, RepairOrderWithDetails, Payment } from "@shared/schema";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 export default function Dashboard() {
   const { toast } = useToast();
@@ -56,6 +59,43 @@ export default function Dashboard() {
   }>({
     queryKey: ["/api/stats"],
   });
+
+  const { data: orders = [] } = useQuery<RepairOrderWithDetails[]>({
+    queryKey: ["/api/orders"],
+  });
+
+  const { data: payments = [] } = useQuery<Payment[]>({
+    queryKey: ["/api/payments"],
+  });
+
+  // Latest Activity Logic
+  const recentActivity = orders
+    .filter(o => o.status !== "entregado")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 8);
+
+  const getPaymentStatus = (order: RepairOrderWithDetails) => {
+    const orderPayments = payments.filter(p => p.orderId === order.id);
+    const totalPaid = orderPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const cost = order.finalCost > 0 ? order.finalCost : order.estimatedCost;
+
+    if (cost === 0) return null;
+    if (totalPaid >= cost) return "paid";
+    if (totalPaid > 0) return "partial";
+    return "unpaid";
+  };
+
+  // --- LÓGICA WHATSAPP (CORREGIDA: Acepta null) ---
+  const openWhatsApp = (e: React.MouseEvent, phone: string | null | undefined) => {
+    e.preventDefault(); // Evita navegar a la orden
+    e.stopPropagation(); // Evita bubbling
+
+    if (!phone) return;
+
+    // Limpiar número (dejar solo dígitos)
+    const cleanPhone = phone.replace(/\D/g, '');
+    window.open(`https://wa.me/${cleanPhone}`, '_blank');
+  };
 
   const createExpenseMutation = useMutation({
     mutationFn: async (newExpense: InsertExpense) => {
@@ -89,7 +129,7 @@ export default function Dashboard() {
       amount: parseFloat(amount),
       description,
       category,
-      date: new Date()// Optional, but good to be explicit
+      date: new Date()
     });
   };
 
@@ -239,6 +279,90 @@ export default function Dashboard() {
             </Card>
           </>
         )}
+      </div>
+
+      {/* RECENT ACTIVITY SECTION */}
+      <div>
+        <h2 className="text-lg font-semibold mt-8 mb-4">Últimas Órdenes Activas</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {recentActivity.map((order) => {
+            const payStatus = getPaymentStatus(order);
+
+            return (
+              <Link key={order.id} href={`/ordenes/${order.id}`}>
+                <div className="cursor-pointer group relative overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-white shadow-sm transition-all hover:shadow-md hover:scale-[1.02]">
+                  <div className="p-4 space-y-3">
+                    {/* Header */}
+                    <div className="flex justify-between items-start gap-2">
+                      <h3 className="font-bold text-sm tracking-tight truncate pr-2">
+                        {order.device.brand} {order.device.model}
+                      </h3>
+                      <div className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider border 
+                        ${order.status === 'listo' ? 'bg-green-500/20 text-green-300 border-green-500/50' :
+                          order.status === 'en_curso' ? 'bg-blue-500/20 text-blue-300 border-blue-500/50' :
+                            'bg-gray-500/20 text-gray-300 border-gray-500/50'}`}>
+                        {order.status === 'en_curso' ? 'En Curso' : order.status}
+                      </div>
+                    </div>
+
+                    {/* Body (MODIFICADO CON ESTILO WHATSAPP MÁS OSCURO) */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-gray-400 font-medium truncate">
+                          {order.client.name}
+                        </p>
+                        {/* Botón WhatsApp Estilo Dark/Glow Sutil */}
+                        {order.client.phone && (
+                          <div
+                            role="button"
+                            onClick={(e) => openWhatsApp(e, order.client.phone)}
+                            // Se usaron verdes más oscuros (600) y bordes más sutiles (40% opacidad)
+                            className="p-1.5 rounded-full bg-black/40 border border-green-600/40 text-green-600 hover:bg-green-900/30 hover:border-green-500/60 hover:text-green-400 transition-all z-20 backdrop-blur-sm flex items-center justify-center"
+                            title="Abrir WhatsApp"
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">
+                        {order.problem}
+                      </p>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="pt-2 border-t border-gray-700/50 flex justify-between items-center text-xs">
+                      <span className="text-gray-400">
+                        {format(new Date(order.createdAt), "dd/MM", { locale: es })}
+                      </span>
+
+                      {/* Payment Badge */}
+                      {payStatus === 'paid' && (
+                        <span className="text-green-400 font-bold flex items-center gap-1">
+                          Pagado <CheckCircle2 className="w-3 h-3" />
+                        </span>
+                      )}
+                      {payStatus === 'partial' && (
+                        <span className="text-amber-400 font-bold">
+                          Pago Parcial
+                        </span>
+                      )}
+                      {payStatus === 'unpaid' && (
+                        <span className="text-gray-600">
+                          Pendiente
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+          {recentActivity.length === 0 && (
+            <div className="col-span-full py-8 text-center text-muted-foreground border rounded-lg border-dashed">
+              No hay órdenes activas recientes.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* BOTTOM SECTION: OPERATIONS (3 COMPACT CARDS) */}

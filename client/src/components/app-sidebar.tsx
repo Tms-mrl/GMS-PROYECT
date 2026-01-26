@@ -10,7 +10,8 @@ import {
   Search,
   HelpCircle,
   Package,
-  Settings
+  Settings as SettingsIcon,
+  LogOut
 } from "lucide-react";
 import {
   Sidebar,
@@ -27,6 +28,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SupportDialog } from "@/components/support-dialog";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
+import { useQuery } from "@tanstack/react-query";
+import { type Settings } from "@shared/schema";
 
 const menuItems = [
   {
@@ -62,13 +70,17 @@ const menuItems = [
   {
     title: "Configuración",
     url: "/configuracion",
-    icon: Settings,
+    icon: SettingsIcon,
   },
 ];
 
 export function AppSidebar() {
   const [location] = useLocation();
   const [supportDialogOpen, setSupportDialogOpen] = React.useState(false);
+
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
+  });
 
   return (
     <>
@@ -79,7 +91,7 @@ export function AppSidebar() {
               <Wrench className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold">GSM FIX</h1>
+              <h1 className="text-lg font-semibold">{settings?.shopName || "GSM FIX"}</h1>
               <p className="text-xs text-muted-foreground">Gestión de Reparaciones</p>
             </div>
           </div>
@@ -134,11 +146,12 @@ export function AppSidebar() {
             <span>Contactar Soporte</span>
           </Button>
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
-              <span className="text-sm font-medium">TR</span>
-            </div>
+            <Avatar className="h-9 w-9 border">
+              <AvatarImage src={settings?.logoUrl || ""} alt={settings?.shopName} className="object-cover" />
+              <AvatarFallback className="bg-muted">LT</AvatarFallback>
+            </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">Técnico Rodrigo</p>
+              <p className="text-sm font-medium truncate">{settings?.shopName || "Técnico Rodrigo"}</p>
               <p className="text-xs text-muted-foreground">Administrador</p>
             </div>
           </div>

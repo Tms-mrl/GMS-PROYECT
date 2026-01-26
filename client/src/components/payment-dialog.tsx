@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Banknote, CreditCard, ArrowRightLeft, AlertCircle } from "lucide-react";
-import type { PaymentMethod, RepairOrderWithDetails } from "@shared/schema";
+import type { PaymentMethod, RepairOrderWithDetails, Settings } from "@shared/schema";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface PaymentDialogProps {
@@ -56,6 +56,10 @@ export function PaymentDialog({
 
     const { data: orders } = useQuery<RepairOrderWithDetails[]>({
         queryKey: ["/api/orders"],
+    });
+
+    const { data: settings } = useQuery<Settings>({
+        queryKey: ["/api/settings"],
     });
 
     // Reset state when dialog opens/closes
@@ -126,37 +130,73 @@ export function PaymentDialog({
     const handleSubmit = () => {
         if (!selectedOrderId || !amount || !selectedOrder) return;
 
-        const amountNum = parseFloat(amount);
+        const amountNum = parseFloat(amount || "0");
+        let finalAmount = amountNum;
+        const items = [];
 
-        if (amountNum <= 0) {
+        // Calculation: Surcharge
+        const cardSurchargePercent = settings?.cardSurcharge || 0;
+        const transferSurchargePercent = settings?.transferSurcharge || 0;
+
+        let surchargeAmount = 0;
+        let appliedSurchargePercent = 0;
+        let surchargeLabel = "";
+
+        if (method === "tarjeta" && cardSurchargePercent > 0) {
+            surchargeAmount = amountNum * (cardSurchargePercent / 100);
+            appliedSurchargePercent = cardSurchargePercent;
+            surchargeLabel = "Recargo Tarjeta";
+        } else if (method === "transferencia" && transferSurchargePercent > 0) {
+            surchargeAmount = amountNum * (transferSurchargePercent / 100);
+            appliedSurchargePercent = transferSurchargePercent;
+            surchargeLabel = "Recargo Transferencia";
+        }
+
+        finalAmount = amountNum + surchargeAmount;
+
+        if (finalAmount <= 0) {
             toast({ title: "El monto debe ser mayor a 0", variant: "destructive" });
             return;
         }
 
-        if (amountNum > pendingBalance + 0.01) {
+        /* 
+           Validación de saldo: 
+           Si es tarjeta, el total puede superar el saldo pendiente por el recargo.
+           Validamos sobre el BASE (amountNum).
+        */
+        if (amountNum > pendingBalance + 0.05) { // tiny tolerance
             toast({
-                title: "El monto excede el saldo pendiente",
+                title: "El monto base excede el saldo pendiente",
                 description: `Saldo pendiente: $${pendingBalance.toFixed(2)}`,
                 variant: "destructive"
             });
             return;
         }
 
-        // --- LA MAGIA: Construimos un item de reparación ---
-        // Esto le dice al backend que este pago pertenece a esta reparación
-        const repairItem = {
+        // 1. Repair Item
+        items.push({
             type: "repair",
             id: selectedOrder.id,
             name: `Reparación ${selectedOrder.device.brand} ${selectedOrder.device.model}`,
             quantity: 1,
-            price: amountNum // El precio del item es lo que está pagando
-        };
+            price: amountNum
+        });
+
+        // 2. Surcharge Item (if applied)
+        if (surchargeAmount > 0) {
+            items.push({
+                type: "other",
+                name: `${surchargeLabel} (${appliedSurchargePercent}%)`,
+                quantity: 1,
+                price: surchargeAmount
+            });
+        }
 
         createPayment.mutate({
-            amount: amountNum,
+            amount: finalAmount,
             method,
-            notes,
-            items: [repairItem] // <--- Enviamos como array
+            notes: notes + (surchargeAmount > 0 ? ` (Incluye recargo: $${surchargeAmount.toFixed(2)})` : ""),
+            items: items
         });
     };
 
@@ -238,6 +278,31 @@ export function PaymentDialog({
                             step="0.01"
                             disabled={!selectedOrderId || !isCostDefined}
                         />
+                        {(
+                            (method === "tarjeta" && (settings?.cardSurcharge || 0) > 0) ||
+                            (method === "transferencia" && (settings?.transferSurcharge || 0) > 0)
+                        ) && (
+                                <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                                    <div className="flex justify-between">
+                                        <span>Subtotal:</span>
+                                        <span>${parseFloat(amount || "0").toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between font-medium">
+                                        <span>
+                                            + Recargo ({method === "tarjeta" ? settings?.cardSurcharge : settings?.transferSurcharge}%):
+                                        </span>
+                                        <span>
+                                            ${(parseFloat(amount || "0") * (((method === "tarjeta" ? settings?.cardSurcharge : settings?.transferSurcharge) || 0) / 100)).toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="border-t border-yellow-300 dark:border-yellow-800 mt-1 pt-1 flex justify-between font-bold">
+                                        <span>Total Final:</span>
+                                        <span>
+                                            ${(parseFloat(amount || "0") * (1 + (((method === "tarjeta" ? settings?.cardSurcharge : settings?.transferSurcharge) || 0) / 100))).toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                     </div>
 
                     <div>
