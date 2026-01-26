@@ -1,6 +1,11 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 
+// 🔹 1. DEFINIR LA URL BASE
+// Si existe la variable de entorno (Vercel), la usa.
+// Si no (Localhost), usa string vacío "" para que actúe el proxy de Vite.
+const BASE_URL = import.meta.env.VITE_API_URL || "";
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -28,7 +33,9 @@ export async function apiRequest(
 ): Promise<Response> {
   const headers = await getAuthHeaders();
 
-  const res = await fetch(url, {
+  // 🔹 2. USAR LA URL BASE AQUÍ
+  // Concatenamos la base (ej: https://railway...) con la ruta (ej: /api/products)
+  const res = await fetch(`${BASE_URL}${url}`, {
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
@@ -45,14 +52,16 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
     async ({ queryKey }) => {
       // Get headers manually since we can't reuse getAuthHeaders easily if we want to preserve queryKey structure logic 
-      // actually we can:
       const { data: { session } } = await supabase.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) {
         headers["Authorization"] = `Bearer ${session.access_token}`;
       }
 
-      const res = await fetch(queryKey.join("/") as string, {
+      // 🔹 3. USAR LA URL BASE AQUÍ TAMBIÉN
+      // React Query pasa la ruta como array en queryKey
+      const path = queryKey.join("/");
+      const res = await fetch(`${BASE_URL}${path}`, {
         headers,
       });
 
