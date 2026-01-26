@@ -7,32 +7,32 @@ import { createServer } from "http";
 
 const app = express();
 
-// --- CONFIGURACIÓN DE CORS (LISTA BLANCA) ---
-// Aquí definimos quién tiene permiso para hablar con el servidor
-const allowedOrigins = [
-  "http://localhost:5001",                   // Tu entorno local
-  "https://gsm-proyect.vercel.app"           // Tu producción en Vercel
-];
-
+// --- CONFIGURACIÓN DE CORS FINAL ---
 app.use(cors({
   origin: (origin, callback) => {
     // 1. Permitir peticiones sin origen (como Postman o Server-to-Server)
     if (!origin) return callback(null, true);
 
-    // 2. Verificar si el origen está en la lista permitida
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log(`Bloqueado por CORS: ${origin}`); // Log para depurar si falla
-      callback(new Error('Not allowed by CORS'));
+    // 2. Permitir Localhost (tu PC)
+    if (origin.startsWith("http://localhost")) {
+      return callback(null, true);
     }
+
+    // 3. Permitir CUALQUIER dominio de Vercel (producción o previews)
+    if (origin.endsWith(".vercel.app")) {
+      return callback(null, true);
+    }
+
+    console.log(`Bloqueado por CORS: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
   },
-  credentials: true // Importante para cookies y headers de autorización
+  credentials: true
 }));
-// ---------------------------------------------
+// ------------------------------------
 
 const httpServer = createServer(app);
 
+// ... (El resto del archivo déjalo IGUAL, desde aquí hacia abajo)
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -97,9 +97,6 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -107,10 +104,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5001", 10);
   const isWindows = process.platform === "win32";
 
