@@ -9,7 +9,7 @@ const app = express();
 
 // <--- CONFIGURACIÓN DE CORS (Permite que Vercel hable con Railway)
 app.use(cors({
-  origin: "*", // En producción idealmente pondrías tu dominio de Vercel, pero "*" funciona para empezar.
+  origin: true, // En producción idealmente pondrías tu dominio de Vercel, pero "*" funciona para empezar.
   credentials: true
 }));
 
