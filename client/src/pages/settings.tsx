@@ -10,12 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Loader2, Save, Upload, Image as ImageIcon } from "lucide-react";
+import { Loader2, Save, Upload, Image as ImageIcon, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useLocation } from "wouter";
 
 export default function SettingsPage() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const [, setLocation] = useLocation();
 
     const { data: settings, isLoading } = useQuery<Settings>({
         queryKey: ["/api/settings"],
@@ -47,8 +49,8 @@ export default function SettingsPage() {
                 whatsapp: settings.whatsapp || "",
                 landline: settings.landline || "",
                 logoUrl: settings.logoUrl || "",
-                cardSurcharge: settings.cardSurcharge || 0,
-                transferSurcharge: settings.transferSurcharge || 0,
+                cardSurcharge: Number(settings.cardSurcharge) || 0,
+                transferSurcharge: Number(settings.transferSurcharge) || 0,
                 receiptDisclaimer: settings.receiptDisclaimer || "",
             });
         }
@@ -79,6 +81,23 @@ export default function SettingsPage() {
         mutation.mutate(data);
     };
 
+    // --- FUNCIÓN DE LOGOUT ---
+    const handleLogout = async () => {
+        try {
+            const { error } = await supabase.auth.signOut();
+            if (error) throw error;
+
+            toast({ title: "Sesión cerrada correctamente" });
+            setLocation("/auth");
+        } catch (error: any) {
+            toast({
+                title: "Error al cerrar sesión",
+                description: error.message,
+                variant: "destructive"
+            });
+        }
+    };
+
     if (isLoading) {
         return (
             <div className="flex h-screen items-center justify-center">
@@ -88,7 +107,7 @@ export default function SettingsPage() {
     }
 
     return (
-        <div className="container max-w-2xl py-10">
+        <div className="container max-w-2xl py-10 space-y-8">
             <Card>
                 <CardHeader>
                     <CardTitle>Configuración del Negocio</CardTitle>
@@ -210,7 +229,7 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* --- SECCIÓN 3: FINANZAS (Corregida) --- */}
+                            {/* --- SECCIÓN 3: FINANZAS --- */}
                             <div className="space-y-4 pt-4 border-t">
                                 <h3 className="text-lg font-medium">Finanzas</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -290,7 +309,19 @@ export default function SettingsPage() {
                                 />
                             </div>
 
-                            <div className="flex justify-end pt-4">
+                            {/* --- BOTONES DE ACCIÓN --- */}
+                            <div className="flex items-center justify-between pt-6 border-t">
+                                {/* BOTÓN DE CERRAR SESIÓN (SIMPLE) */}
+                                <Button
+                                    type="button"
+                                    variant="destructive"
+                                    onClick={handleLogout}
+                                >
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    Cerrar Sesión
+                                </Button>
+
+                                {/* BOTÓN DE GUARDAR */}
                                 <Button type="submit" disabled={mutation.isPending}>
                                     {mutation.isPending && (
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -307,7 +338,7 @@ export default function SettingsPage() {
     );
 }
 
-// --- SUBCOMPONENTE DE LOGO (Mantenido intacto) ---
+// --- SUBCOMPONENTE DE LOGO ---
 function LogoUpload({ value, onChange }: { value: string, onChange: (url: string) => void }) {
     const [uploading, setUploading] = useState(false);
     const { toast } = useToast();
@@ -321,8 +352,8 @@ function LogoUpload({ value, onChange }: { value: string, onChange: (url: string
             return;
         }
 
-        if (file.size > 2 * 1024 * 1024) {
-            toast({ title: "La imagen no puede superar los 2MB", variant: "destructive" });
+        if (file.size > 5 * 1024 * 1024) {
+            toast({ title: "La imagen no puede superar los 5MB", variant: "destructive" });
             return;
         }
 
@@ -347,12 +378,12 @@ function LogoUpload({ value, onChange }: { value: string, onChange: (url: string
 
             if (!res.ok) {
                 const err = await res.json();
-                throw new Error(err.error || "Error al subir imagen");
+                throw new Error(err.message || "Error al subir imagen");
             }
 
             const data = await res.json();
             onChange(data.url);
-            toast({ title: "Logo subido correctamente" });
+            toast({ title: "Logo cargado correctamente" });
 
         } catch (error: any) {
             console.error(error);
@@ -366,7 +397,7 @@ function LogoUpload({ value, onChange }: { value: string, onChange: (url: string
         <div className="flex items-center gap-4">
             <div className={`h-20 w-20 rounded-md border flex items-center justify-center bg-muted overflow-hidden relative group`}>
                 {value ? (
-                    <img src={value} alt="Logo" className="h-full w-full object-cover" />
+                    <img src={value} alt="Logo" className="h-full w-full object-contain p-1" />
                 ) : (
                     <ImageIcon className="h-8 w-8 text-muted-foreground" />
                 )}

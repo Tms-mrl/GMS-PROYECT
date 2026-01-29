@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -36,6 +36,17 @@ export default function AuthPage() {
     const { toast } = useToast();
     const [isLoading, setIsLoading] = useState(false);
 
+    // Verificar si ya hay sesión al cargar
+    useEffect(() => {
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                setLocation("/");
+            }
+        };
+        checkSession();
+    }, [setLocation]);
+
     // Login Form
     const loginForm = useForm<z.infer<typeof authSchema>>({
         resolver: zodResolver(authSchema),
@@ -57,7 +68,7 @@ export default function AuthPage() {
     async function onLogin(values: z.infer<typeof authSchema>) {
         try {
             setIsLoading(true);
-            const { error } = await supabase.auth.signInWithPassword({
+            const { error, data } = await supabase.auth.signInWithPassword({
                 email: values.email,
                 password: values.password,
             });
@@ -66,16 +77,26 @@ export default function AuthPage() {
                 toast({
                     variant: "destructive",
                     title: "Error al iniciar sesión",
-                    description: error.message,
+                    description: error.message === "Invalid login credentials"
+                        ? "Credenciales incorrectas. Verifica tu email y contraseña."
+                        : error.message,
                 });
                 return;
             }
 
-            toast({
-                title: "Bienvenido",
-                description: "Has iniciado sesión correctamente.",
-            });
-            setLocation("/");
+            if (data.session) {
+                // REDIRECCIÓN INMEDIATA
+                toast({
+                    title: "Bienvenido",
+                    description: "Ingresando al sistema...",
+                });
+
+                // Pequeño timeout para permitir que el toast se renderice antes de cambiar de página
+                setTimeout(() => {
+                    setLocation("/");
+                }, 500);
+            }
+
         } catch (error) {
             console.error(error);
             toast({
@@ -114,7 +135,7 @@ export default function AuthPage() {
             } else if (data.user) {
                 toast({
                     title: "Verifica tu email",
-                    description: "Se ha enviado un correo de confirmación.",
+                    description: "Se ha enviado un correo de confirmación. Revisa tu bandeja de entrada.",
                 });
             }
 
