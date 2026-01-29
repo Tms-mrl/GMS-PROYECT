@@ -330,6 +330,7 @@ export default function Payments() {
                               <CommandEmpty>No encontrada.</CommandEmpty>
                               <CommandGroup>
                                 {activeOrders.map((order) => {
+                                  // VISUAL ONLY: Aquí no es crítico el cálculo exacto, es solo para mostrar en la lista
                                   const precioAmostrar = order.finalCost > 0 ? order.finalCost : order.estimatedCost;
                                   return (
                                     <CommandItem
@@ -375,7 +376,21 @@ export default function Payments() {
                           className="w-full"
                           onClick={() => {
                             const fullCost = selectedOrder.finalCost > 0 ? selectedOrder.finalCost : selectedOrder.estimatedCost;
-                            const totalPaid = selectedOrder.payments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+
+                            // --- CORRECCIÓN AQUÍ: Filtrar recargos del total pagado ---
+                            const totalPaid = selectedOrder.payments?.reduce((sum, p) => {
+                              if (p.items && p.items.length > 0) {
+                                // Solo sumamos items que NO sean recargos
+                                const repairPayment = p.items
+                                  .filter((i: any) => i.type === 'repair' || (!i.type && !i.name.toLowerCase().includes('recargo')))
+                                  .reduce((s: number, i: any) => s + Number(i.price || 0), 0);
+                                return sum + repairPayment;
+                              }
+                              // Fallback para pagos antiguos sin items
+                              return sum + Number(p.amount);
+                            }, 0) ?? 0;
+                            // -----------------------------------------------------------
+
                             const balance = Math.max(0, fullCost - totalPaid);
 
                             if (balance <= 0) {

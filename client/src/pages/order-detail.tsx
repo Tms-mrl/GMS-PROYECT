@@ -11,7 +11,7 @@ import {
   Printer,
   ChevronRight,
   Plus,
-  MessageCircle // <--- Import del icono
+  MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -119,6 +119,7 @@ export default function OrderDetail() {
   const currentData = { ...order, ...formData };
 
   // Calculate finances
+  // LÓGICA CLAVE: Aquí ya estamos filtrando los recargos correctamente
   const totalPaid = order.payments?.reduce((sum, p) => {
     if (p.items && p.items.length > 0) {
       const repairPayment = p.items
@@ -128,11 +129,14 @@ export default function OrderDetail() {
     }
     return sum + Number(p.amount);
   }, 0) ?? 0;
+
   const final = currentData.finalCost ?? 0;
   const estimated = currentData.estimatedCost ?? 0;
 
   const totalCost = final > 0 ? final : estimated;
   const isCostDefined = totalCost > 0;
+
+  // Este 'balance' es el valor CORRECTO ($15.000)
   const balance = Math.max(0, totalCost - totalPaid);
 
   const handleSave = () => {
@@ -145,6 +149,9 @@ export default function OrderDetail() {
         open={isPaymentDialogOpen}
         onOpenChange={setIsPaymentDialogOpen}
         defaultOrderId={orderId}
+        // --- CAMBIO AQUÍ: Pasamos el balance correcto al diálogo ---
+        defaultAmount={balance}
+        // ---------------------------------------------------------
         onPaymentSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["/api/orders", orderId] });
           queryClient.invalidateQueries({ queryKey: ["/api/stats"] });

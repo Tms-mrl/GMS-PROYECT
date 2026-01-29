@@ -2,7 +2,6 @@ import { Plus, Smartphone } from "lucide-react";
 import { UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     FormControl,
     FormField,
@@ -20,8 +19,11 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { PatternLock } from "@/components/ui/pattern-lock";
-import type { Device, LockType } from "@shared/schema";
+import type { Device } from "@shared/schema"; // <--- SE QUITÓ LockType DE AQUÍ
 import { OrderFormValues, NewDeviceValues } from "./schemas";
+
+// Definimos el tipo localmente para corregir el error
+type LockType = "PIN" | "PASSWORD" | "PATRON" | "NONE";
 
 interface DeviceSelectionProps {
     form: UseFormReturn<OrderFormValues>;
@@ -44,24 +46,26 @@ export function DeviceSelection({
     onCreateDevice,
     isCreatingDevice,
 }: DeviceSelectionProps) {
-    const lockType = deviceForm.watch("lockType");
+    const lockType = deviceForm.watch("lockType") as LockType;
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                    <Smartphone className="h-4 w-4" />
-                    Dispositivo
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                {!showNewDevice ? (
-                    <>
+        <div className="p-4 border rounded-lg bg-card text-card-foreground shadow-sm space-y-3">
+            {/* --- ENCABEZADO CON ÍCONO VERDE --- */}
+            <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-green-500/10 rounded-full">
+                    <Smartphone className="h-4 w-4 text-green-600" />
+                </div>
+                <h3 className="font-semibold text-lg">Dispositivo</h3>
+            </div>
+
+            {!showNewDevice ? (
+                <div className="flex gap-2 items-end">
+                    <div className="flex-1">
                         <FormField
                             control={form.control}
                             name="deviceId"
                             render={({ field }) => (
-                                <FormItem>
+                                <FormItem className="flex flex-col">
                                     <FormLabel>Seleccionar Dispositivo *</FormLabel>
                                     <Select
                                         value={field.value}
@@ -92,240 +96,205 @@ export function DeviceSelection({
                                 </FormItem>
                             )}
                         />
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setShowNewDevice(true)}
-                            disabled={!selectedClientId}
-                        >
-                            <Plus className="h-4 w-4 mr-2" />
-                            Nuevo Dispositivo
-                        </Button>
-                    </>
-                ) : (
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label>Marca *</Label>
-                                <Input
-                                    {...deviceForm.register("brand")}
-                                    placeholder="Samsung, Apple..."
-                                    data-testid="input-device-brand"
-                                />
-                            </div>
-                            <div>
-                                <Label>Modelo *</Label>
-                                <Input
-                                    {...deviceForm.register("model")}
-                                    placeholder="Galaxy S21..."
-                                    data-testid="input-device-model"
-                                />
-                            </div>
+                    </div>
+
+                    {/* --- BOTÓN DE AGREGAR CON ÍCONO DE SMARTPHONE --- */}
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setShowNewDevice(true)}
+                        disabled={!selectedClientId}
+                        title="Nuevo Dispositivo"
+                        className="mb-[2px]"
+                    >
+                        <Smartphone className="h-5 w-5" />
+                    </Button>
+                </div>
+            ) : (
+                <div className="space-y-4 pt-2 border-t mt-2">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label>Marca *</Label>
+                            <Input
+                                {...deviceForm.register("brand")}
+                                placeholder="Samsung, Apple..."
+                                data-testid="input-device-brand"
+                            />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label>IMEI</Label>
-                                <Input
-                                    {...deviceForm.register("imei")}
-                                    placeholder="123456789012345"
-                                    className="font-mono"
-                                    data-testid="input-device-imei"
-                                />
-                            </div>
-                            <div>
-                                <Label>Tipo de Bloqueo</Label>
-                                <Select
-                                    value={lockType || "NONE"}
-                                    onValueChange={(value) => {
-                                        const actualValue = value === "NONE" ? "" : value;
-                                        deviceForm.setValue("lockType", actualValue as LockType);
-                                        // Limpiar el valor cuando cambia el tipo
-                                        deviceForm.setValue("lockValue", "");
-                                        deviceForm.clearErrors("lockValue");
-                                    }}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Seleccionar..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="NONE">Ninguno</SelectItem>
-                                        <SelectItem value="PIN">PIN</SelectItem>
-                                        <SelectItem value="PATRON">Patrón</SelectItem>
-                                        <SelectItem value="PASSWORD">Contraseña</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                        <div>
+                            <Label>Modelo *</Label>
+                            <Input
+                                {...deviceForm.register("model")}
+                                placeholder="Galaxy S21..."
+                                data-testid="input-device-model"
+                            />
                         </div>
-                        {lockType && (
-                            <div className="space-y-2">
-                                {lockType === "PIN" && (
-                                    <div>
-                                        <Label>PIN *</Label>
-                                        <Input
-                                            type="text"
-                                            inputMode="numeric"
-                                            pattern="[0-9]*"
-                                            maxLength={8}
-                                            {...deviceForm.register("lockValue", {
-                                                required: lockType === "PIN" ? "El PIN es requerido" : false,
-                                                minLength: {
-                                                    value: 4,
-                                                    message: "El PIN debe tener al menos 4 dígitos",
-                                                },
-                                                maxLength: {
-                                                    value: 8,
-                                                    message: "El PIN no puede tener más de 8 dígitos",
-                                                },
-                                                validate: (value) => {
-                                                    if (lockType === "PIN" && value) {
-                                                        if (!/^\d+$/.test(value)) {
-                                                            return "El PIN solo puede contener números";
-                                                        }
-                                                        if (value.length < 4) {
-                                                            return "El PIN debe tener al menos 4 dígitos";
-                                                        }
-                                                    }
-                                                    return true;
-                                                },
-                                                onChange: (e) => {
-                                                    // Solo permitir números
-                                                    const value = e.target.value.replace(/\D/g, "").slice(0, 8);
-                                                    e.target.value = value;
-                                                    deviceForm.setValue("lockValue", value);
-                                                },
-                                            })}
-                                            placeholder="1234"
-                                            autoComplete="off"
-                                            data-testid="input-lock-pin"
-                                        />
-                                        {deviceForm.formState.errors.lockValue && (
-                                            <p className="text-sm text-destructive mt-1">
-                                                {deviceForm.formState.errors.lockValue.message}
-                                            </p>
-                                        )}
-                                        {deviceForm.watch("lockValue") && (
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                                {deviceForm.watch("lockValue")?.length || 0}/8 dígitos
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
-                                {lockType === "PASSWORD" && (
-                                    <div>
-                                        <Label>Contraseña *</Label>
-                                        <Input
-                                            type="text"
-                                            maxLength={20}
-                                            {...deviceForm.register("lockValue", {
-                                                required:
-                                                    lockType === "PASSWORD"
-                                                        ? "La contraseña es requerida"
-                                                        : false,
-                                                maxLength: {
-                                                    value: 20,
-                                                    message:
-                                                        "La contraseña no puede tener más de 20 caracteres",
-                                                },
-                                                onChange: (e) => {
-                                                    const value = e.target.value.slice(0, 20);
-                                                    deviceForm.setValue("lockValue", value);
-                                                },
-                                            })}
-                                            placeholder="Ingresa la contraseña"
-                                            autoComplete="off"
-                                            data-testid="input-lock-password"
-                                        />
-                                        {deviceForm.formState.errors.lockValue && (
-                                            <p className="text-sm text-destructive mt-1">
-                                                {deviceForm.formState.errors.lockValue.message}
-                                            </p>
-                                        )}
-                                        {deviceForm.watch("lockValue") && (
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                                {deviceForm.watch("lockValue")?.length || 0}/20
-                                                caracteres
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
-                                {lockType === "PATRON" && (
-                                    <div>
-                                        <Label>Patrón de Desbloqueo *</Label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label>IMEI</Label>
+                            <Input
+                                {...deviceForm.register("imei")}
+                                placeholder="123456789012345"
+                                className="font-mono"
+                                data-testid="input-device-imei"
+                            />
+                        </div>
+                        <div>
+                            <Label>Tipo de Bloqueo</Label>
+                            <Select
+                                value={lockType || "NONE"}
+                                onValueChange={(value) => {
+                                    const actualValue = value === "NONE" ? "" : value;
+                                    deviceForm.setValue("lockType", actualValue as any); // cast any para evitar conflicto
+                                    deviceForm.setValue("lockValue", "");
+                                    deviceForm.clearErrors("lockValue");
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccionar..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="NONE">Ninguno</SelectItem>
+                                    <SelectItem value="PIN">PIN</SelectItem>
+                                    <SelectItem value="PATRON">Patrón</SelectItem>
+                                    <SelectItem value="PASSWORD">Contraseña</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    {lockType && lockType !== "NONE" && (
+                        <div className="space-y-2 p-3 bg-muted/30 rounded-md border border-dashed">
+                            {lockType === "PIN" && (
+                                <div>
+                                    <Label>PIN *</Label>
+                                    <Input
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        maxLength={8}
+                                        {...deviceForm.register("lockValue", {
+                                            required: lockType === "PIN" ? "El PIN es requerido" : false,
+                                            minLength: { value: 4, message: "Mínimo 4 dígitos" },
+                                            maxLength: { value: 8, message: "Máximo 8 dígitos" },
+                                            validate: (value) => {
+                                                if (lockType === "PIN" && value) {
+                                                    if (!/^\d+$/.test(value)) return "Solo números";
+                                                    if (value.length < 4) return "Mínimo 4 dígitos";
+                                                }
+                                                return true;
+                                            },
+                                            onChange: (e) => {
+                                                const value = e.target.value.replace(/\D/g, "").slice(0, 8);
+                                                e.target.value = value;
+                                                deviceForm.setValue("lockValue", value);
+                                            },
+                                        })}
+                                        placeholder="1234"
+                                        autoComplete="off"
+                                        data-testid="input-lock-pin"
+                                    />
+                                    {deviceForm.formState.errors.lockValue && (
+                                        <p className="text-sm text-destructive mt-1">
+                                            {deviceForm.formState.errors.lockValue.message}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                            {lockType === "PASSWORD" && (
+                                <div>
+                                    <Label>Contraseña *</Label>
+                                    <Input
+                                        type="text"
+                                        maxLength={20}
+                                        {...deviceForm.register("lockValue", {
+                                            required: lockType === "PASSWORD" ? "Requerida" : false,
+                                            maxLength: { value: 20, message: "Máximo 20 caracteres" },
+                                        })}
+                                        placeholder="Ingresa la contraseña"
+                                        autoComplete="off"
+                                        data-testid="input-lock-password"
+                                    />
+                                    {deviceForm.formState.errors.lockValue && (
+                                        <p className="text-sm text-destructive mt-1">
+                                            {deviceForm.formState.errors.lockValue.message}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                            {lockType === "PATRON" && (
+                                <div>
+                                    <Label>Patrón de Desbloqueo *</Label>
+                                    <div className="flex justify-center py-2 bg-background rounded border">
                                         <PatternLock
                                             value={deviceForm.watch("lockValue") || ""}
                                             onChange={(pattern) => {
                                                 deviceForm.setValue("lockValue", pattern);
-                                                // Validar que el patrón tenga al menos 4 puntos
                                                 if (pattern) {
                                                     try {
                                                         const points = JSON.parse(pattern);
                                                         if (Array.isArray(points) && points.length < 4) {
-                                                            deviceForm.setError("lockValue", {
-                                                                type: "manual",
-                                                                message: "El patrón debe tener al menos 4 puntos",
-                                                            });
+                                                            deviceForm.setError("lockValue", { type: "manual", message: "Mínimo 4 puntos" });
                                                         } else {
                                                             deviceForm.clearErrors("lockValue");
                                                         }
                                                     } catch {
-                                                        deviceForm.setError("lockValue", {
-                                                            type: "manual",
-                                                            message: "Patrón inválido",
-                                                        });
+                                                        deviceForm.setError("lockValue", { type: "manual", message: "Inválido" });
                                                     }
                                                 }
                                             }}
                                         />
-                                        {deviceForm.formState.errors.lockValue && (
-                                            <p className="text-sm text-destructive mt-1">
-                                                {deviceForm.formState.errors.lockValue.message}
-                                            </p>
-                                        )}
                                     </div>
-                                )}
-                            </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label>Color</Label>
-                                <Input
-                                    {...deviceForm.register("color")}
-                                    placeholder="Negro"
-                                />
-                            </div>
-                            <div>
-                                <Label>Condición</Label>
-                                <Input
-                                    {...deviceForm.register("condition")}
-                                    placeholder="Bueno"
-                                />
-                            </div>
+                                    {deviceForm.formState.errors.lockValue && (
+                                        <p className="text-sm text-destructive mt-1 text-center">
+                                            {deviceForm.formState.errors.lockValue.message}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                        <div className="flex gap-2">
-                            <Button
-                                type="button"
-                                size="sm"
-                                onClick={deviceForm.handleSubmit((data) =>
-                                    onCreateDevice(data)
-                                )}
-                                disabled={isCreatingDevice}
-                                data-testid="button-save-device"
-                            >
-                                Guardar Dispositivo
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setShowNewDevice(false)}
-                            >
-                                Cancelar
-                            </Button>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label>Color</Label>
+                            <Input
+                                {...deviceForm.register("color")}
+                                placeholder="Negro"
+                            />
+                        </div>
+                        <div>
+                            <Label>Condición</Label>
+                            <Input
+                                {...deviceForm.register("condition")}
+                                placeholder="Bueno"
+                            />
                         </div>
                     </div>
-                )}
-            </CardContent>
-        </Card>
+
+                    <div className="flex gap-2 justify-end pt-2">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowNewDevice(false)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            onClick={deviceForm.handleSubmit((data) => onCreateDevice(data))}
+                            disabled={isCreatingDevice}
+                            data-testid="button-save-device"
+                        >
+                            Guardar Dispositivo
+                        </Button>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }

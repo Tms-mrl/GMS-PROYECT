@@ -23,10 +23,12 @@ import { Banknote, CreditCard, ArrowRightLeft, AlertCircle } from "lucide-react"
 import type { PaymentMethod, RepairOrderWithDetails, Settings } from "@shared/schema";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+// --- CAMBIO 1: Agregamos defaultAmount a la interfaz ---
 interface PaymentDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     defaultOrderId?: string;
+    defaultAmount?: number; // <--- ¡Esto faltaba!
     onPaymentSuccess?: () => void;
 }
 
@@ -46,6 +48,7 @@ export function PaymentDialog({
     open,
     onOpenChange,
     defaultOrderId,
+    defaultAmount, // <--- Lo recibimos aquí
     onPaymentSuccess
 }: PaymentDialogProps) {
     const [selectedOrderId, setSelectedOrderId] = useState(defaultOrderId || "");
@@ -68,7 +71,6 @@ export function PaymentDialog({
             if (defaultOrderId) {
                 setSelectedOrderId(defaultOrderId);
             }
-            // No reseteamos amount aquí para permitir que el useEffect de abajo calcule el saldo
             setMethod("efectivo");
             setNotes("");
         }
@@ -76,8 +78,19 @@ export function PaymentDialog({
 
     const selectedOrder = orders?.find(o => o.id === selectedOrderId);
 
-    // Calculate costs logic
-    const totalPaid = selectedOrder?.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
+    // --- CAMBIO 2: Lógica mejorada para ignorar recargos en el cálculo interno ---
+    const totalPaid = selectedOrder?.payments?.reduce((sum, p) => {
+        if (p.items && p.items.length > 0) {
+            // Filtramos los items que sean "recargo" para no restarlos de la deuda real
+            const repairPayment = p.items
+                .filter((i: any) => i.type === 'repair' || (!i.type && !i.name.toLowerCase().includes('recargo')))
+                .reduce((s: number, i: any) => s + Number(i.price || 0), 0);
+            return sum + repairPayment;
+        }
+        return sum + Number(p.amount);
+    }, 0) ?? 0;
+    // --------------------------------------------------------------------------
+
     const estimated = selectedOrder?.estimatedCost ?? 0;
     const final = selectedOrder?.finalCost ?? 0;
 
@@ -89,22 +102,23 @@ export function PaymentDialog({
     // Auto-fill amount when order changes
     useEffect(() => {
         if (open && selectedOrder && isCostDefined) {
-            if (pendingBalance > 0) {
-                setAmount(pendingBalance.toFixed(2));
+            // Prioridad: Si nos pasaron un defaultAmount exacto, usamos ese. Si no, usamos el cálculo interno.
+            const targetAmount = defaultAmount !== undefined ? defaultAmount : pendingBalance;
+
+            if (targetAmount > 0) {
+                setAmount(targetAmount.toFixed(2));
             } else {
                 setAmount("");
             }
         }
-    }, [selectedOrderId, isCostDefined, pendingBalance, open]);
+    }, [selectedOrderId, isCostDefined, pendingBalance, open, defaultAmount]);
 
-    // --- CAMBIO CLAVE AQUÍ ---
-    // Actualizamos la mutación para que acepte 'items'
     const createPayment = useMutation({
         mutationFn: async (data: {
             amount: number;
             method: PaymentMethod;
             notes: string;
-            items: any[] // Enviamos el array de items
+            items: any[]
         }) => {
             const res = await apiRequest("POST", "/api/payments", data);
             return res.json();
@@ -159,8 +173,7 @@ export function PaymentDialog({
             return;
         }
 
-        /* 
-           Validación de saldo: 
+        /* Validación de saldo: 
            Si es tarjeta, el total puede superar el saldo pendiente por el recargo.
            Validamos sobre el BASE (amountNum).
         */
@@ -222,6 +235,8 @@ export function PaymentDialog({
                             </SelectTrigger>
                             <SelectContent>
                                 {sortedOrders?.map((order) => {
+                                    // Cálculo inline para el dropdown (también debe ignorar recargos idealmente, 
+                                    // pero aquí es solo visual para la lista).
                                     const pCost = order.finalCost > 0 ? order.finalCost : order.estimatedCost;
                                     const pPaid = order.payments?.reduce((s, p) => s + p.amount, 0) ?? 0;
                                     const pBal = Math.max(0, pCost - pPaid);
