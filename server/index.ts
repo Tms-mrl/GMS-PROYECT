@@ -32,22 +32,25 @@ app.use(cors({
 
 const httpServer = createServer(app);
 
-// ... (El resto del archivo déjalo IGUAL, desde aquí hacia abajo)
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
   }
 }
 
+// -----------------------------------------------------------------------
+// 🔴 MODIFICACIÓN: AUMENTO DE LÍMITE A 50MB
+// -----------------------------------------------------------------------
 app.use(
   express.json({
+    limit: '50mb', // <--- ESTO PERMITE LOGOS PESADOS EN BASE64
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: '50mb' })); // <--- TAMBIÉN AQUÍ
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
