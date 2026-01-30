@@ -7,11 +7,10 @@ import {
   CheckCircle2,
   DollarSign,
   Plus,
-  ArrowRight,
+  TrendingDown,
   Wallet,
   TrendingUp,
-  TrendingDown,
-  MessageCircle // Import del icono
+  MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,14 +84,13 @@ export default function Dashboard() {
     return "unpaid";
   };
 
-  // --- LÓGICA WHATSAPP (CORREGIDA: Acepta null) ---
+  // --- LÓGICA WHATSAPP ---
   const openWhatsApp = (e: React.MouseEvent, phone: string | null | undefined) => {
-    e.preventDefault(); // Evita navegar a la orden
-    e.stopPropagation(); // Evita bubbling
+    e.preventDefault();
+    e.stopPropagation();
 
     if (!phone) return;
 
-    // Limpiar número (dejar solo dígitos)
     const cleanPhone = phone.replace(/\D/g, '');
     window.open(`https://wa.me/${cleanPhone}`, '_blank');
   };
@@ -230,11 +228,12 @@ export default function Dashboard() {
           ))
         ) : (
           <>
+            {/* CAJA (AZUL - BRILLO RESTAURADO) */}
             <Card className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-950 dark:to-background border-blue-200 dark:border-blue-800">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-muted-foreground">Caja Actual (Efectivo)</p>
-                  <Wallet className="h-4 w-4 text-blue-600" />
+                  <Wallet className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">
                   {formatMoney(stats?.cashInBox ?? 0)}
@@ -242,11 +241,12 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
+            {/* INGRESOS (VERDE - BRILLO RESTAURADO) */}
             <Card className="bg-gradient-to-br from-green-50 to-white dark:from-green-950 dark:to-background border-green-200 dark:border-green-800">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-muted-foreground">Ingresos (Hoy)</p>
-                  <TrendingUp className="h-4 w-4 text-green-600" />
+                  <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
                 </div>
                 <div className="text-2xl font-bold text-green-700 dark:text-green-400">
                   {formatMoney(stats?.dailyIncome ?? 0)}
@@ -254,11 +254,12 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
+            {/* GASTOS (ROJO - BRILLO RESTAURADO) */}
             <Card className="bg-gradient-to-br from-red-50 to-white dark:from-red-950 dark:to-background border-red-200 dark:border-red-800">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-muted-foreground">Gastos (Hoy)</p>
-                  <TrendingDown className="h-4 w-4 text-red-600" />
+                  <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
                 </div>
                 <div className="text-2xl font-bold text-red-700 dark:text-red-400">
                   {formatMoney(stats?.dailyExpenses ?? 0)}
@@ -266,13 +267,15 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card">
+            {/* BALANCE NETO (BLANCO/PLATA - NUMEROS BLANCOS) */}
+            <Card className="bg-gradient-to-br from-gray-50 to-white dark:from-zinc-800 dark:to-black border-gray-200 dark:border-zinc-700">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-muted-foreground">Balance Neto (Hoy)</p>
-                  <DollarSign className="h-4 w-4 text-gray-500" />
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Balance Neto (Hoy)</p>
+                  <DollarSign className="h-4 w-4 text-gray-500 dark:text-white" />
                 </div>
-                <div className={`text-2xl font-bold ${(stats?.netBalance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {/* Aquí eliminamos el verde/rojo y ponemos texto blanco/negro según el tema */}
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">
                   {formatMoney(stats?.netBalance ?? 0)}
                 </div>
               </CardContent>
@@ -298,25 +301,24 @@ export default function Dashboard() {
                         {order.device.brand} {order.device.model}
                       </h3>
                       <div className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider border 
-                        ${order.status === 'listo' ? 'bg-green-500/20 text-green-300 border-green-500/50' :
+                            ${order.status === 'listo' ? 'bg-green-500/20 text-green-300 border-green-500/50' :
                           order.status === 'en_curso' ? 'bg-blue-500/20 text-blue-300 border-blue-500/50' :
                             'bg-gray-500/20 text-gray-300 border-gray-500/50'}`}>
                         {order.status === 'en_curso' ? 'En Curso' : order.status}
                       </div>
                     </div>
 
-                    {/* Body (MODIFICADO CON ESTILO WHATSAPP MÁS OSCURO) */}
+                    {/* Body */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-gray-400 font-medium truncate">
                           {order.client.name}
                         </p>
-                        {/* Botón WhatsApp Estilo Dark/Glow Sutil */}
+                        {/* Botón WhatsApp */}
                         {order.client.phone && (
                           <div
                             role="button"
                             onClick={(e) => openWhatsApp(e, order.client.phone)}
-                            // Se usaron verdes más oscuros (600) y bordes más sutiles (40% opacidad)
                             className="p-1.5 rounded-full bg-black/40 border border-green-600/40 text-green-600 hover:bg-green-900/30 hover:border-green-500/60 hover:text-green-400 transition-all z-20 backdrop-blur-sm flex items-center justify-center"
                             title="Abrir WhatsApp"
                           >

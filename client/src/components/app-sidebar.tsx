@@ -7,11 +7,9 @@ import {
   CreditCard,
   BarChart3,
   Wrench,
-  Search,
   HelpCircle,
   Package,
-  Settings as SettingsIcon,
-  LogOut
+  Settings as SettingsIcon
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,7 +23,6 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SupportDialog } from "@/components/support-dialog";
 import {
@@ -85,31 +82,23 @@ export function AppSidebar() {
   return (
     <>
       <Sidebar>
+        {/* HEADER: AHORA MUESTRA EL NOMBRE DEL SOFT "GSM FIX" */}
         <SidebarHeader className="p-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
               <Wrench className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold">{settings?.shopName || "GSM FIX"}</h1>
-              <p className="text-xs text-muted-foreground">Gestión de Reparaciones</p>
+              <h1 className="text-lg font-bold tracking-tight">GSM FIX</h1>
+              <p className="text-xs text-muted-foreground">Sistema de Gestión</p>
             </div>
           </div>
         </SidebarHeader>
 
         <SidebarContent>
-          <SidebarGroup className="px-3 py-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Buscar IMEI o cliente..."
-                className="pl-9 h-10"
-                data-testid="input-sidebar-search"
-              />
-            </div>
-          </SidebarGroup>
+          {/* ELIMINADA LA BARRA DE BÚSQUEDA AQUÍ */}
 
-          <SidebarGroup>
+          <SidebarGroup className="mt-2">
             <SidebarGroupLabel>Menú Principal</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -145,14 +134,18 @@ export function AppSidebar() {
             <HelpCircle className="h-4 w-4" />
             <span>Contactar Soporte</span>
           </Button>
+
+          {/* INFORMACIÓN DEL TALLER (SE MANTIENE ABAJO) */}
           <div className="flex items-center gap-3">
-            <Avatar className="h-9 w-9 border">
-              <AvatarImage src={settings?.logoUrl || ""} alt={settings?.shopName} className="object-cover" />
-              <AvatarFallback className="bg-muted">LT</AvatarFallback>
+            <Avatar className="h-9 w-9 border bg-white">
+              <AvatarImage src={settings?.logoUrl || ""} alt={settings?.shopName} className="object-contain p-0.5" />
+              <AvatarFallback className="bg-muted font-bold text-xs">
+                {settings?.shopName?.substring(0, 2).toUpperCase() || "TL"}
+              </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{settings?.shopName || "Técnico Rodrigo"}</p>
-              <p className="text-xs text-muted-foreground">Administrador</p>
+              <p className="text-sm font-medium truncate">{settings?.shopName || "Mi Taller"}</p>
+              <p className="text-xs text-muted-foreground">Técnico</p>
             </div>
           </div>
         </SidebarFooter>
