@@ -21,17 +21,13 @@ export type OrderStatus = typeof orderStatuses[number];
 export const paymentMethods = ["efectivo", "tarjeta", "transferencia"] as const;
 export type PaymentMethod = typeof paymentMethods[number];
 
-export const checklistValue = z.enum(["yes", "no", "unknown"]);
-export type ChecklistValue = z.infer<typeof checklistValue>;
-
-export const intakeChecklistSchema = z.object({
-  charges: checklistValue.optional(),
-  powersOn: checklistValue.optional(),
-  dropped: checklistValue.optional(),
-  wet: checklistValue.optional(),
-  openedBefore: checklistValue.optional(),
-  inWarranty: checklistValue.optional(),
-});
+// --- CAMBIO IMPORTANTE: Checklist dinámico ---
+// Ya no usamos claves fijas como "charges", sino un mapa libre de Texto -> Valor
+// Valores: "yes", "no". Si no está, es "unknown".
+export const intakeChecklistSchema = z.record(
+  z.string(),
+  z.enum(["yes", "no"]).nullable().optional()
+);
 
 // --------------------------------------------------------------------------
 // 2. DEFINICIÓN DE TABLAS (Drizzle)
@@ -141,7 +137,7 @@ export const expenses = pgTable("expenses", {
   date: timestamp("date").notNull().defaultNow(),
 });
 
-// --- SETTINGS (AQUÍ AGREGAMOS transferSurcharge) ---
+// --- SETTINGS ---
 export const settings = pgTable("settings", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
@@ -153,8 +149,13 @@ export const settings = pgTable("settings", {
   landline: text("landline").default(""),
   logoUrl: text("logo_url").default(""),
   cardSurcharge: decimal("card_surcharge", { precision: 10, scale: 2 }).default("0"),
-  transferSurcharge: decimal("transfer_surcharge", { precision: 10, scale: 2 }).default("0"), // <--- NUEVO CAMPO
+  transferSurcharge: decimal("transfer_surcharge", { precision: 10, scale: 2 }).default("0"),
   receiptDisclaimer: text("receipt_disclaimer").default("Garantía de 30 días."),
+  ticketFooter: text("ticket_footer").default("Gracias por su compra.\nConserve este ticket para garantía."),
+  // Lista de opciones del checklist
+  checklistOptions: text("checklist_options").array().default(["¿Carga?", "¿Enciende?", "¿Golpeado?", "¿Mojado?", "¿Abierto previamente?", "¿En garantía?", "¿Micro SD?", "¿Porta SIM?", "¿Tarjeta SIM?"]),
+  // --- NUEVO CAMPO: Formato de Impresión (a4 o ticket) ---
+  printFormat: text("print_format").default("a4"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -237,7 +238,7 @@ export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 // Settings (AQUÍ HABILITAMOS EL CAMPO NUEVO)
 export const insertSettingsSchema = createInsertSchema(settings, {
   cardSurcharge: z.coerce.number(),
-  transferSurcharge: z.coerce.number(), // <--- COERCIÓN AGREGADA
+  transferSurcharge: z.coerce.number(),
 }).pick({
   shopName: true,
   address: true,
@@ -247,8 +248,11 @@ export const insertSettingsSchema = createInsertSchema(settings, {
   landline: true,
   logoUrl: true,
   cardSurcharge: true,
-  transferSurcharge: true, // <--- CAMPO PERMITIDO
+  transferSurcharge: true,
   receiptDisclaimer: true,
+  ticketFooter: true,
+  checklistOptions: true,
+  printFormat: true, // <--- NUEVO CAMPO HABILITADO
 });
 export type Settings = Omit<typeof settings.$inferSelect, "cardSurcharge" | "transferSurcharge"> & {
   cardSurcharge: number;

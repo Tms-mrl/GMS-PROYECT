@@ -34,7 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import type { RepairOrderWithDetails, OrderStatus, Payment } from "@shared/schema";
+import type { RepairOrderWithDetails, OrderStatus, Payment, Settings } from "@shared/schema";
 import { PaymentDialog } from "@/components/payment-dialog";
 
 const statusOptions: { value: OrderStatus; label: string }[] = [
@@ -53,9 +53,15 @@ export default function OrderDetail() {
 
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
 
+  // 1. QUERY DE LA ORDEN
   const { data: order, isLoading } = useQuery<RepairOrderWithDetails>({
     queryKey: ["/api/orders", orderId],
     enabled: !!orderId,
+  });
+
+  // 2. QUERY DE SETTINGS (Para saber qué preguntas mostrar en el checklist)
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
   });
 
   const [formData, setFormData] = useState<Partial<RepairOrderWithDetails>>({});
@@ -413,7 +419,7 @@ export default function OrderDetail() {
             </CardContent>
           </Card>
 
-          {/* TARJETA DE DISPOSITIVO (REDISEÑADA) */}
+          {/* TARJETA DE DISPOSITIVO */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -494,7 +500,6 @@ export default function OrderDetail() {
                         <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold block mb-2">
                           Patrón
                         </span>
-                        {/* Contenedor del patrón ajustado y centrado */}
                         <div className="flex justify-center items-center p-3 bg-muted/20 rounded-md border border-dashed border-muted-foreground/30 w-[200px]">
                           <PatternLock
                             value={order.device.lockValue || ""}
@@ -542,6 +547,7 @@ export default function OrderDetail() {
             </CardContent>
           </Card>
 
+          {/* CHECKLIST DE RECEPCIÓN DINÁMICO */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -549,29 +555,29 @@ export default function OrderDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {[
-                { key: "charges", label: "¿Carga?" },
-                { key: "powersOn", label: "¿Enciende?" },
-                { key: "dropped", label: "¿Golpeado?" },
-                { key: "wet", label: "¿Mojado?" },
-                { key: "openedBefore", label: "¿Abierto previamente?" },
-                { key: "inWarranty", label: "¿En garantía?" },
-              ].map((item) => {
-                const val = order.intakeChecklist?.[item.key as keyof typeof order.intakeChecklist];
-                let text = "No especificado";
+              {/* MAGIA AQUÍ: Usamos la configuración o las claves guardadas */}
+              {(settings?.checklistOptions || Object.keys(order.intakeChecklist || {})).map((item) => {
+                // Como ahora intakeChecklist es Record<string, string>, accedemos directo
+                const val = (order.intakeChecklist as any)?.[item];
+
+                let text = "Desconocido";
                 let color = "text-muted-foreground";
 
                 if (val === "yes") { text = "Sí"; color = "text-green-600 dark:text-green-400 font-medium"; }
                 else if (val === "no") { text = "No"; color = "text-red-600 dark:text-red-400 font-medium"; }
-                else if (val === "unknown") { text = "Desconocido"; color = "text-orange-600 dark:text-orange-400 font-medium"; }
+                // Si es null/undefined, queda como Desconocido/Gris
 
                 return (
-                  <div key={item.key} className="flex justify-between items-center text-sm border-b last:border-0 pb-2 last:pb-0">
-                    <span>{item.label}</span>
+                  <div key={item} className="flex justify-between items-center text-sm border-b last:border-0 pb-2 last:pb-0">
+                    <span>{item}</span>
                     <span className={color}>{text}</span>
                   </div>
                 );
               })}
+
+              {(!settings?.checklistOptions && (!order.intakeChecklist || Object.keys(order.intakeChecklist).length === 0)) && (
+                <p className="text-sm text-muted-foreground italic">Sin información de checklist.</p>
+              )}
             </CardContent>
           </Card>
         </div>

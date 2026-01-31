@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertSettingsSchema, type InsertSettings, type Settings } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Loader2, Save, Upload, Image as ImageIcon, LogOut } from "lucide-react";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Loader2, Save, Upload, Image as ImageIcon, LogOut, Plus, X, Printer, FileText, ScrollText } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useLocation } from "wouter";
 
@@ -36,8 +36,14 @@ export default function SettingsPage() {
             cardSurcharge: 0,
             transferSurcharge: 0,
             receiptDisclaimer: "",
+            ticketFooter: "",
+            checklistOptions: [],
+            printFormat: "a4", // Valor por defecto
         },
     });
+
+    // Helper para manejar el array de strings manualmente
+    const [checklistItems, setChecklistItems] = useState<string[]>([]);
 
     useEffect(() => {
         if (settings) {
@@ -52,13 +58,18 @@ export default function SettingsPage() {
                 cardSurcharge: Number(settings.cardSurcharge) || 0,
                 transferSurcharge: Number(settings.transferSurcharge) || 0,
                 receiptDisclaimer: settings.receiptDisclaimer || "",
+                ticketFooter: settings.ticketFooter || "",
+                checklistOptions: settings.checklistOptions || [],
+                printFormat: settings.printFormat || "a4",
             });
+            setChecklistItems(settings.checklistOptions || []);
         }
     }, [settings, form]);
 
     const mutation = useMutation({
         mutationFn: async (data: InsertSettings) => {
-            const res = await apiRequest("POST", "/api/settings", data);
+            const finalData = { ...data, checklistOptions: checklistItems };
+            const res = await apiRequest("POST", "/api/settings", finalData);
             return await res.json();
         },
         onSuccess: () => {
@@ -81,12 +92,32 @@ export default function SettingsPage() {
         mutation.mutate(data);
     };
 
-    // --- FUNCIÓN DE LOGOUT ---
+    // Handlers para checklist manual
+    const addChecklistItem = () => {
+        if (checklistItems.length >= 12) {
+            toast({ title: "Máximo 12 ítems permitidos", variant: "destructive" });
+            return;
+        }
+        setChecklistItems([...checklistItems, "Nuevo ítem"]);
+    };
+
+    const updateChecklistItem = (index: number, value: string) => {
+        const newItems = [...checklistItems];
+        newItems[index] = value;
+        setChecklistItems(newItems);
+        form.setValue("checklistOptions", newItems);
+    };
+
+    const removeChecklistItem = (index: number) => {
+        const newItems = checklistItems.filter((_, i) => i !== index);
+        setChecklistItems(newItems);
+        form.setValue("checklistOptions", newItems);
+    };
+
     const handleLogout = async () => {
         try {
             const { error } = await supabase.auth.signOut();
             if (error) throw error;
-
             toast({ title: "Sesión cerrada correctamente" });
             setLocation("/auth");
         } catch (error: any) {
@@ -107,7 +138,7 @@ export default function SettingsPage() {
     }
 
     return (
-        <div className="container max-w-2xl py-10 space-y-8">
+        <div className="container max-w-2xl py-10 space-y-8 pb-20">
             <Card>
                 <CardHeader>
                     <CardTitle>Configuración del Negocio</CardTitle>
@@ -229,7 +260,64 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* --- SECCIÓN 3: FINANZAS --- */}
+                            {/* --- SECCIÓN 3: PREFERENCIAS DE IMPRESIÓN (NUEVO) --- */}
+                            <div className="space-y-4 pt-4 border-t">
+                                <h3 className="text-lg font-medium flex items-center gap-2">
+                                    <Printer className="h-5 w-5" />
+                                    Preferencias de Impresión
+                                </h3>
+                                <FormField
+                                    control={form.control}
+                                    name="printFormat"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Formato de Orden de Reparación</FormLabel>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {/* OPCIÓN A4 */}
+                                                <label className={`relative flex cursor-pointer flex-col rounded-lg border-2 p-4 hover:bg-accent/50 ${field.value === 'a4' ? 'border-primary bg-accent' : 'border-muted'}`}>
+                                                    <input
+                                                        type="radio"
+                                                        className="sr-only"
+                                                        checked={field.value === 'a4'}
+                                                        onChange={() => field.onChange('a4')}
+                                                    />
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                                            <FileText className="h-6 w-6" />
+                                                        </div>
+                                                        <span className="font-semibold">Hoja A4 (Estándar)</span>
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Imprime dos copias (Original y Duplicado) en una sola hoja A4. Ideal para entregar una mitad al cliente.
+                                                    </p>
+                                                </label>
+
+                                                {/* OPCIÓN TICKET */}
+                                                <label className={`relative flex cursor-pointer flex-col rounded-lg border-2 p-4 hover:bg-accent/50 ${field.value === 'ticket' ? 'border-primary bg-accent' : 'border-muted'}`}>
+                                                    <input
+                                                        type="radio"
+                                                        className="sr-only"
+                                                        checked={field.value === 'ticket'}
+                                                        onChange={() => field.onChange('ticket')}
+                                                    />
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                                            <ScrollText className="h-6 w-6" />
+                                                        </div>
+                                                        <span className="font-semibold">Ticket Térmico</span>
+                                                    </div>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Formato de tira continua para impresoras de 80mm o 58mm. Diseño compacto y económico.
+                                                    </p>
+                                                </label>
+                                            </div>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+
+                            {/* --- SECCIÓN 4: FINANZAS --- */}
                             <div className="space-y-4 pt-4 border-t">
                                 <h3 className="text-lg font-medium">Finanzas</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -248,11 +336,11 @@ export default function SettingsPage() {
                                                             placeholder="0"
                                                             {...field}
                                                             onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                                            className="pl-4 pr-8"
                                                         />
                                                         <span className="absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
                                                     </div>
                                                 </FormControl>
-                                                <FormDescription>Se suma al cobrar con Tarjeta.</FormDescription>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
@@ -273,11 +361,11 @@ export default function SettingsPage() {
                                                             placeholder="0"
                                                             {...field}
                                                             onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                                            className="pl-4 pr-8"
                                                         />
                                                         <span className="absolute right-3 top-2.5 text-sm text-muted-foreground">%</span>
                                                     </div>
                                                 </FormControl>
-                                                <FormDescription>Se suma al cobrar con Transferencia.</FormDescription>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
@@ -285,24 +373,74 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* --- SECCIÓN 4: RECIBO --- */}
+                            {/* --- SECCIÓN 5: CHECKLIST DE RECEPCIÓN --- */}
                             <div className="space-y-4 pt-4 border-t">
-                                <h3 className="text-lg font-medium">Ticket / Recibo</h3>
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-lg font-medium">Checklist de Recepción</h3>
+                                    <Button type="button" variant="outline" size="sm" onClick={addChecklistItem} disabled={checklistItems.length >= 12}>
+                                        <Plus className="h-4 w-4 mr-2" /> Agregar Item
+                                    </Button>
+                                </div>
+                                <p className="text-sm text-muted-foreground">Define qué preguntas aparecerán al ingresar un equipo (Máx 12).</p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {checklistItems.map((item, index) => (
+                                        <div key={index} className="flex gap-2 items-center">
+                                            <Input
+                                                value={item}
+                                                onChange={(e) => updateChecklistItem(index, e.target.value)}
+                                                placeholder="Ej. ¿Enciende?"
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="shrink-0 text-muted-foreground hover:text-destructive"
+                                                onClick={() => removeChecklistItem(index)}
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* --- SECCIÓN 6: LEGALES --- */}
+                            <div className="space-y-4 pt-4 border-t">
+                                <h3 className="text-lg font-medium">Textos Legales</h3>
                                 <FormField
                                     control={form.control}
                                     name="receiptDisclaimer"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Términos y Condiciones (Pie de página)</FormLabel>
+                                            <FormLabel>Términos y Condiciones (Orden de Reparación)</FormLabel>
                                             <FormControl>
                                                 <Textarea
-                                                    placeholder="Garantía de 30 días..."
+                                                    placeholder="El equipo se recibe en las condiciones..."
                                                     className="min-h-[100px]"
                                                     {...field}
                                                     value={field.value ?? ""}
                                                 />
                                             </FormControl>
-                                            <FormDescription>Este texto aparecerá al pie de los tickets.</FormDescription>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name="ticketFooter"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Pie de Ticket (Comprobante de Pago)</FormLabel>
+                                            <FormControl>
+                                                <Textarea
+                                                    placeholder="Gracias por su compra. Garantía de 30 días..."
+                                                    className="min-h-[80px]"
+                                                    {...field}
+                                                    value={field.value ?? ""}
+                                                />
+                                            </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
@@ -311,7 +449,6 @@ export default function SettingsPage() {
 
                             {/* --- BOTONES DE ACCIÓN --- */}
                             <div className="flex items-center justify-between pt-6 border-t">
-                                {/* BOTÓN DE CERRAR SESIÓN (SIMPLE) */}
                                 <Button
                                     type="button"
                                     variant="destructive"
@@ -321,7 +458,6 @@ export default function SettingsPage() {
                                     Cerrar Sesión
                                 </Button>
 
-                                {/* BOTÓN DE GUARDAR */}
                                 <Button type="submit" disabled={mutation.isPending}>
                                     {mutation.isPending && (
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />

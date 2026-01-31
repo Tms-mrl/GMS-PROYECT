@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Plus, Check, ChevronsUpDown, User, MapPin, Phone, Mail, FileText, StickyNote, UserPlus } from "lucide-react";
+import { ArrowLeft, User, MapPin, Phone, Mail, FileText, StickyNote, UserPlus, Search, Check, ChevronsUpDown, Smartphone } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -35,13 +35,10 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Client, Device } from "@shared/schema"; // <--- LockType ELIMINADO
+import type { Client, Device, Settings } from "@shared/schema";
 import { DeviceSelection } from "@/components/orders/device-selection";
 import { OrderDetails } from "@/components/orders/order-details";
 import { orderFormSchema, newDeviceSchema, OrderFormValues, NewDeviceValues } from "@/components/orders/schemas";
-
-// Definimos el tipo localmente para evitar el error de importación
-type LockType = "PIN" | "PASSWORD" | "PATRON" | "NONE";
 
 export default function NewOrder() {
   const [, navigate] = useLocation();
@@ -63,6 +60,11 @@ export default function NewOrder() {
   const { data: devices } = useQuery<Device[]>({
     queryKey: ["/api/devices", selectedClientId],
     enabled: !!selectedClientId,
+  });
+
+  // Query para el checklist dinámico
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
   });
 
   // Forms
@@ -90,12 +92,12 @@ export default function NewOrder() {
       serialNumber: "",
       color: "",
       condition: "Bueno",
-      lockType: "" as any, // Inicializar vacío
+      lockType: "" as any,
       lockValue: "",
     },
   });
 
-  // Estado para el formulario del nuevo cliente (Expandido)
+  // Estado para el formulario del nuevo cliente
   const [newClientData, setNewClientData] = useState({
     name: "",
     phone: "",
@@ -110,7 +112,7 @@ export default function NewOrder() {
     form.resetField("intakeChecklist");
   }, [selectedClientId, selectedDeviceId, form]);
 
-  // --- MUTACIÓN CREAR CLIENTE (EXPANDIDA) ---
+  // --- MUTACIONES ---
   const createClient = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/clients", newClientData);
@@ -118,17 +120,12 @@ export default function NewOrder() {
     },
     onSuccess: (newClient: Client) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-
-      // Seleccionar automáticamente al nuevo cliente
       form.setValue("clientId", newClient.id);
       setSelectedClientId(newClient.id);
-      form.setValue("deviceId", ""); // Reset device selection
+      form.setValue("deviceId", "");
       setSelectedDeviceId("");
-
       setShowNewClient(false);
-      // Reset form fields
       setNewClientData({ name: "", phone: "", email: "", dni: "", address: "", notes: "" });
-
       toast({ title: "Cliente creado y seleccionado" });
     },
     onError: () => {
@@ -189,6 +186,11 @@ export default function NewOrder() {
     createOrder.mutate(data as unknown as z.infer<typeof orderFormSchema>);
   });
 
+  // Lista de fallback si settings tarda en cargar
+  const checklistItems = settings?.checklistOptions && settings.checklistOptions.length > 0
+    ? settings.checklistOptions
+    : ["¿Carga?", "¿Enciende?", "¿Golpeado?", "¿Mojado?", "¿Abierto previamente?", "¿En garantía?", "¿Micro SD?", "¿Porta SIM?", "¿Tarjeta SIM?"];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -207,7 +209,7 @@ export default function NewOrder() {
         <form onSubmit={onSubmit} className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-            {/* --- SECCIÓN SELECCIÓN DE CLIENTE (Con Recuadro Tipo Card) --- */}
+            {/* SELECCIÓN DE CLIENTE */}
             <div className="p-4 border rounded-lg bg-card text-card-foreground shadow-sm space-y-3">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-primary/10 rounded-full">
@@ -284,7 +286,6 @@ export default function NewOrder() {
                   />
                 </div>
 
-                {/* Botón ÍCONO pequeño para crear cliente */}
                 <Button
                   type="button"
                   variant="outline"
@@ -313,45 +314,56 @@ export default function NewOrder() {
 
           <OrderDetails form={form} />
 
-          {/* Intake Checklist Section */}
+          {/* CHECKLIST DE RECEPCIÓN DINÁMICO */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Checklist de Recepción</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[
-                  { name: "charges", label: "¿Carga?" },
-                  { name: "powersOn", label: "¿Enciende?" },
-                  { name: "dropped", label: "¿Golpeado?" },
-                  { name: "wet", label: "¿Mojado?" },
-                  { name: "openedBefore", label: "¿Abierto previamente?" },
-                  { name: "inWarranty", label: "¿En garantía?" },
-                ].map((item) => (
+                {checklistItems.map((item, index) => (
                   <FormField
-                    key={item.name}
+                    key={index}
                     control={form.control}
-                    name={`intakeChecklist.${item.name}` as any}
+                    name={`intakeChecklist.${item}` as any}
                     render={({ field }) => (
                       <FormItem className="space-y-3">
-                        <FormLabel>{item.label}</FormLabel>
+                        <FormLabel>{item}</FormLabel>
                         <FormControl>
                           <RadioGroup
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
-                            className="flex flex-col space-y-1"
+                            // Usamos "key" para forzar re-render si cambia el valor a null
+                            key={field.value}
+                            value={field.value || ""} // Si es null, pasamos string vacío para que no marque nada
+                            className="flex space-x-4"
                           >
                             <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="yes" id={`${item.name}-yes`} />
-                              <label htmlFor={`${item.name}-yes`} className="font-normal cursor-pointer">Sí</label>
+                              <RadioGroupItem
+                                value="yes"
+                                id={`${index}-yes`}
+                                // TRUCO PARA DESMARCAR:
+                                onClick={(e) => {
+                                  if (field.value === "yes") {
+                                    e.preventDefault(); // Evita el comportamiento nativo de "mantener seleccionado"
+                                    field.onChange(null); // Borra el valor
+                                  }
+                                }}
+                              />
+                              <label htmlFor={`${index}-yes`} className="font-normal cursor-pointer text-sm">Sí</label>
                             </div>
                             <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="no" id={`${item.name}-no`} />
-                              <label htmlFor={`${item.name}-no`} className="font-normal cursor-pointer">No</label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="unknown" id={`${item.name}-unknown`} />
-                              <label htmlFor={`${item.name}-unknown`} className="font-normal cursor-pointer">Desconocido</label>
+                              <RadioGroupItem
+                                value="no"
+                                id={`${index}-no`}
+                                // TRUCO PARA DESMARCAR:
+                                onClick={(e) => {
+                                  if (field.value === "no") {
+                                    e.preventDefault();
+                                    field.onChange(null);
+                                  }
+                                }}
+                              />
+                              <label htmlFor={`${index}-no`} className="font-normal cursor-pointer text-sm">No</label>
                             </div>
                           </RadioGroup>
                         </FormControl>
@@ -374,7 +386,7 @@ export default function NewOrder() {
         </form>
       </Form>
 
-      {/* --- MODAL CREAR CLIENTE (EXPANDIDO) --- */}
+      {/* --- MODAL CREAR CLIENTE --- */}
       <Dialog open={showNewClient} onOpenChange={setShowNewClient}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>

@@ -12,16 +12,13 @@ import { useEffect } from "react";
 const getFinancials = (order: RepairOrderWithDetails) => {
     const totalCost = order.finalCost > 0 ? order.finalCost : order.estimatedCost;
 
-    // LÓGICA CORREGIDA: Ignorar recargos en el cálculo de lo pagado (Capital vs Interés)
     const totalPaid = order.payments?.reduce((sum, p) => {
         if (p.items && p.items.length > 0) {
-            // Filtramos items que NO sean recargos para sumar solo capital
             const repairPayment = p.items
                 .filter((i: any) => i.type === 'repair' || (!i.type && !i.name.toLowerCase().includes('recargo')))
                 .reduce((s: number, i: any) => s + Number(i.price || 0), 0);
             return sum + repairPayment;
         }
-        // Fallback para pagos viejos sin items
         return sum + Number(p.amount);
     }, 0) || 0;
 
@@ -29,6 +26,7 @@ const getFinancials = (order: RepairOrderWithDetails) => {
     return { totalCost, totalPaid, balance };
 };
 
+// Helper para obtener SI/NO de la respuesta
 const getCheckValue = (checklist: any, key: string) => {
     const val = checklist?.[key];
     if (val === "yes") return "SI";
@@ -36,11 +34,21 @@ const getCheckValue = (checklist: any, key: string) => {
     return "-";
 };
 
+// Helper para limpiar el texto de la pregunta (quitar signos para ahorrar espacio en la hoja)
+const cleanLabel = (text: string) => {
+    return text.replace(/[¿?]/g, "").substring(0, 10); // Max 10 caracteres
+};
+
 // ==========================================
 // 1. COPIA DEL TÉCNICO (Parte Superior - 42% Altura)
 // ==========================================
 const TechnicianCopy = ({ order, settings }: { order: RepairOrderWithDetails, settings?: Settings }) => {
     const { totalCost, totalPaid, balance } = getFinancials(order);
+
+    // Obtenemos las opciones dinámicas O las que tenga la orden guardada
+    const checklistItems = settings?.checklistOptions && settings.checklistOptions.length > 0
+        ? settings.checklistOptions
+        : Object.keys(order.intakeChecklist || {});
 
     return (
         <div className="flex flex-col h-full text-[10px] font-sans text-black leading-tight border-b-2 border-dashed border-gray-400 pb-2">
@@ -79,16 +87,20 @@ const TechnicianCopy = ({ order, settings }: { order: RepairOrderWithDetails, se
 
             {/* DETALLES TÉCNICOS (CHECKLIST Y FALLA) */}
             <div className="flex gap-1 flex-1 min-h-0 mb-1">
-                {/* Checklist */}
+                {/* Checklist Dinámico */}
                 <div className="w-1/3 border border-black text-[9px]">
                     <div className="bg-gray-200 font-bold text-center border-b border-black py-0.5">CHECKLIST</div>
-                    <div className="grid grid-cols-2 p-1 gap-x-1 gap-y-0.5">
-                        <div className="flex justify-between border-b border-dotted border-gray-300"><span>Enc:</span><b>{getCheckValue(order.intakeChecklist, "powersOn")}</b></div>
-                        <div className="flex justify-between border-b border-dotted border-gray-300"><span>Carg:</span><b>{getCheckValue(order.intakeChecklist, "charges")}</b></div>
-                        <div className="flex justify-between border-b border-dotted border-gray-300"><span>Tact:</span><b>{getCheckValue(order.intakeChecklist, "touch")}</b></div>
-                        <div className="flex justify-between border-b border-dotted border-gray-300"><span>Disp:</span><b>{getCheckValue(order.intakeChecklist, "screen")}</b></div>
-                        <div className="flex justify-between border-b border-dotted border-gray-300"><span>Moj:</span><b>{getCheckValue(order.intakeChecklist, "wet")}</b></div>
-                        <div className="flex justify-between border-b border-dotted border-gray-300"><span>Golp:</span><b>{getCheckValue(order.intakeChecklist, "dropped")}</b></div>
+                    <div className="grid grid-cols-2 p-1 gap-x-2 gap-y-0.5">
+                        {checklistItems.length > 0 ? (
+                            checklistItems.map((item, idx) => (
+                                <div key={idx} className="flex justify-between border-b border-dotted border-gray-300 overflow-hidden">
+                                    <span className="truncate mr-1" title={item}>{cleanLabel(item)}:</span>
+                                    <b>{getCheckValue(order.intakeChecklist, item)}</b>
+                                </div>
+                            ))
+                        ) : (
+                            <span className="col-span-2 text-center italic text-gray-500">Sin checklist</span>
+                        )}
                     </div>
                 </div>
 
@@ -134,8 +146,6 @@ const TechnicianCopy = ({ order, settings }: { order: RepairOrderWithDetails, se
 // ==========================================
 const ClientCopy = ({ order, settings }: { order: RepairOrderWithDetails, settings?: Settings }) => {
     const { totalCost, totalPaid, balance } = getFinancials(order);
-
-    // Usamos el campo receiptDisclaimer que es donde guardas los términos
     const terminos = settings?.receiptDisclaimer || "Sin términos configurados. Configurelos en Ajustes.";
 
     return (
@@ -203,7 +213,6 @@ const ClientCopy = ({ order, settings }: { order: RepairOrderWithDetails, settin
                             </div>
                             <div className="flex justify-between text-green-700 border-b border-dashed border-gray-400 pb-1">
                                 <span>Adelanto:</span>
-                                {/* Mostramos el monto LIMPIO calculado arriba */}
                                 <span className="font-bold">- ${totalPaid}</span>
                             </div>
                             <div className="flex justify-between text-lg font-bold bg-gray-200 p-1 -mx-2 -mb-2 mt-auto">
@@ -215,10 +224,10 @@ const ClientCopy = ({ order, settings }: { order: RepairOrderWithDetails, settin
                 </div>
             </div>
 
-            {/* TÉRMINOS Y CONDICIONES (DINÁMICOS DESDE SETTINGS) */}
+            {/* TÉRMINOS Y CONDICIONES */}
             <div className="flex-1 border-t-2 border-black pt-1 min-h-0 overflow-hidden flex flex-col">
                 <h3 className="font-bold text-[9px] mb-1 underline">TÉRMINOS Y CONDICIONES:</h3>
-                <div className="text-[9px] text-justify leading-snug text-gray-700 whitespace-pre-wrap h-full">
+                <div className="text-[9px] text-justify leading-snug text-gray-700 whitespace-pre-wrap h-full overflow-hidden">
                     {terminos}
                 </div>
             </div>
@@ -243,7 +252,6 @@ export default function OrderPrint() {
         enabled: !!orderId,
     });
 
-    // Query a la tabla Settings real
     const { data: settings } = useQuery<Settings>({
         queryKey: ["/api/settings"],
     });
@@ -266,7 +274,7 @@ export default function OrderPrint() {
 
     return (
         <div className="min-h-screen bg-gray-100 p-8 print:p-0 print:bg-white font-sans print:overflow-hidden">
-            {/* BOTONES (Solo pantalla) */}
+            {/* BOTONES */}
             <div className="max-w-[210mm] mx-auto mb-6 flex justify-between print:hidden">
                 <Button variant="outline" asChild>
                     <Link href={`/ordenes/${orderId}`}>
@@ -282,8 +290,7 @@ export default function OrderPrint() {
 
             {/* ÁREA DE IMPRESIÓN */}
             <div id="print-area" className="bg-white w-[210mm] h-[296mm] mx-auto p-[8mm] shadow-lg print:shadow-none print:w-full print:h-[296mm] print:absolute print:top-0 print:left-0 print:m-0 flex flex-col justify-between overflow-hidden box-border">
-
-                {/* PARTE SUPERIOR: TÉCNICO (42%) */}
+                {/* TÉCNICO */}
                 <div className="h-[42%]">
                     <TechnicianCopy order={order} settings={settings} />
                 </div>
@@ -294,14 +301,12 @@ export default function OrderPrint() {
                     <span className="relative bg-white px-2 text-[8px] text-gray-500 font-bold tracking-widest">CORTE AQUÍ</span>
                 </div>
 
-                {/* PARTE INFERIOR: CLIENTE (53%) */}
+                {/* CLIENTE */}
                 <div className="h-[53%]">
                     <ClientCopy order={order} settings={settings} />
                 </div>
-
             </div>
 
-            {/* ESTILOS GLOBALES DE IMPRESIÓN */}
             <style>{`
         @media print {
           @page { margin: 0; size: A4; }

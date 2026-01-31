@@ -8,7 +8,7 @@ import {
   type Product,
   type PaymentItem,
   type Settings,
-  type InsertExpense // Importamos el tipo Expense
+  type InsertExpense
 } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, ShoppingBag, Wrench, Trash2, ShoppingCart, DollarSign, TrendingDown } from "lucide-react";
+import { Plus, Search, ShoppingBag, Wrench, Trash2, ShoppingCart, DollarSign, TrendingDown, Printer } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -34,7 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter, // Import Footer
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -43,7 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label"; // Import Label
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -52,6 +52,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Check } from "lucide-react";
+// IMPORTANTE: Importamos la función de impresión
+import { printTicket } from "@/lib/printer";
 
 export default function Payments() {
   const { toast } = useToast();
@@ -59,7 +61,7 @@ export default function Payments() {
 
   // Dialog States
   const [isOpenSale, setIsOpenSale] = useState(false);
-  const [isOpenExpense, setIsOpenExpense] = useState(false); // Estado para modal de gastos
+  const [isOpenExpense, setIsOpenExpense] = useState(false);
 
   // --- POS STATE (VENTAS) ---
   const [cart, setCart] = useState<PaymentItem[]>([]);
@@ -166,7 +168,7 @@ export default function Payments() {
       const res = await apiRequest("POST", "/api/payments", payload);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (newPayment) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
@@ -176,6 +178,9 @@ export default function Payments() {
       setCart([]);
       setSaleNotes("");
       setPaymentMethod("efectivo");
+
+      // Opcional: Imprimir ticket automáticamente al vender
+      // printTicket(newPayment, settings);
     },
     onError: (error: Error) => {
       toast({
@@ -194,8 +199,6 @@ export default function Payments() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
-      // Sería bueno invalidar una query de gastos si existiera una lista aquí, 
-      // pero por ahora solo actualizamos stats y cerramos el modal.
       toast({ title: "Gasto registrado correctamente" });
       setIsOpenExpense(false);
       setExpenseAmount("");
@@ -679,12 +682,13 @@ export default function Payments() {
                 <TableHead>Items</TableHead>
                 <TableHead>Método</TableHead>
                 <TableHead className="text-right">Monto</TableHead>
+                <TableHead className="w-[50px]"></TableHead> {/* Columna para el botón de imprimir */}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredPayments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     No hay movimientos registrados
                   </TableCell>
                 </TableRow>
@@ -733,6 +737,16 @@ export default function Payments() {
                     <TableCell className="capitalize">{payment.method}</TableCell>
                     <TableCell className="text-right font-medium">
                       {formatMoney(payment.amount)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => printTicket(payment, settings)}
+                        title="Imprimir Ticket"
+                      >
+                        <Printer className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))

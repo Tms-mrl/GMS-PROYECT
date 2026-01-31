@@ -14,7 +14,7 @@ import { z } from "zod";
 import { supabase } from "./supabase";
 
 // --------------------------------------------------------------------------
-// 1. CONSTANTES GLOBALES (Menús desplegables)
+// 1. CONSTANTES GLOBALES
 // --------------------------------------------------------------------------
 export const orderStatuses = ["recibido", "diagnostico", "en_curso", "listo", "entregado"] as const;
 export type OrderStatus = typeof orderStatuses[number];
@@ -74,7 +74,6 @@ export const repairOrders = pgTable("repair_orders", {
   solution: text("solution").default(""),
   technicianName: text("technician_name").default(""),
 
-  // Decimales en DB (Strings), pero los trataremos como números
   estimatedCost: decimal("estimated_cost", { precision: 10, scale: 2 }).default("0"),
   finalCost: decimal("final_cost", { precision: 10, scale: 2 }).default("0"),
 
@@ -143,32 +142,31 @@ export const settings = pgTable("settings", {
   landline: text("landline").default(""),
   logoUrl: text("logo_url").default(""),
   cardSurcharge: decimal("card_surcharge", { precision: 10, scale: 2 }).default("0"),
-  transferSurcharge: decimal("transfer_surcharge", { precision: 10, scale: 2 }).default("0"), // <--- CAMPO AGREGADO
+  transferSurcharge: decimal("transfer_surcharge", { precision: 10, scale: 2 }).default("0"),
   receiptDisclaimer: text("receipt_disclaimer").default("Garantía de 30 días."),
+  ticketFooter: text("ticket_footer").default("Gracias por su compra.\nConserve este ticket para garantía."),
+  checklistOptions: text("checklist_options").array().default(["¿Carga?", "¿Enciende?", "¿Golpeado?", "¿Mojado?", "¿Abierto previamente?", "¿En garantía?", "¿Micro SD?", "¿Porta SIM?", "¿Tarjeta SIM?"]),
+  printFormat: text("print_format").default("a4"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 
 // --------------------------------------------------------------------------
-// 3. TIPOS (INTERFACES) "PARCHEADOS"
+// 3. TIPOS (INTERFACES)
 // --------------------------------------------------------------------------
 
-// Helpers para crear esquemas de inserción
 export const insertUserSchema = createInsertSchema(users);
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
-// Clients
 export const insertClientSchema = createInsertSchema(clients).omit({ userId: true, id: true });
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = z.infer<typeof insertClientSchema>;
 
-// Devices
 export const insertDeviceSchema = createInsertSchema(devices).omit({ userId: true, id: true });
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 
-// Repair Orders (Override decimal -> number)
 export const insertRepairOrderSchema = createInsertSchema(repairOrders, {
   estimatedCost: z.coerce.number(),
   finalCost: z.coerce.number()
@@ -178,10 +176,8 @@ export type RepairOrder = Omit<typeof repairOrders.$inferSelect, "estimatedCost"
   estimatedCost: number;
   finalCost: number;
 };
-
 export type InsertRepairOrder = z.infer<typeof insertRepairOrderSchema>;
 
-// Products (Override decimal -> number)
 export const insertProductSchema = createInsertSchema(products, {
   price: z.coerce.number(),
   cost: z.coerce.number(),
@@ -194,7 +190,6 @@ export type Product = Omit<typeof products.$inferSelect, "price" | "cost"> & {
 };
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 
-// Payments (Override decimal -> number)
 export const insertPaymentSchema = createInsertSchema(payments, {
   amount: z.coerce.number(),
 }).pick({
@@ -209,7 +204,6 @@ export type Payment = Omit<typeof payments.$inferSelect, "amount"> & {
 };
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 
-// Expenses (Override decimal -> number)
 export const insertExpenseSchema = createInsertSchema(expenses, {
   date: z.coerce.date(),
   amount: z.coerce.string()
@@ -224,10 +218,9 @@ export type Expense = Omit<typeof expenses.$inferSelect, "amount"> & {
 };
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
-// Settings
 export const insertSettingsSchema = createInsertSchema(settings, {
   cardSurcharge: z.coerce.number(),
-  transferSurcharge: z.coerce.number(), // <--- COERCIÓN AGREGADA
+  transferSurcharge: z.coerce.number(),
 }).pick({
   shopName: true,
   address: true,
@@ -237,8 +230,11 @@ export const insertSettingsSchema = createInsertSchema(settings, {
   landline: true,
   logoUrl: true,
   cardSurcharge: true,
-  transferSurcharge: true, // <--- PERMITIDO
+  transferSurcharge: true,
   receiptDisclaimer: true,
+  ticketFooter: true,
+  checklistOptions: true,
+  printFormat: true, // <--- HABILITADO
 });
 export type Settings = Omit<typeof settings.$inferSelect, "cardSurcharge" | "transferSurcharge"> & {
   cardSurcharge: number;
@@ -247,7 +243,6 @@ export type Settings = Omit<typeof settings.$inferSelect, "cardSurcharge" | "tra
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 
 
-// Tipos Relacionales (Auxiliares)
 export interface RepairOrderWithDetails extends RepairOrder {
   client: Client;
   device: Device;
@@ -255,53 +250,43 @@ export interface RepairOrderWithDetails extends RepairOrder {
 }
 
 export interface IStorage {
-  // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
-  // Clients
   getClients(userId: string): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   createClient(client: InsertClient & { userId: string }): Promise<Client>;
   updateClient(id: string, data: Partial<InsertClient>): Promise<Client | undefined>;
 
-  // Devices
   getDevices(userId: string): Promise<Device[]>;
   getDevicesByClient(clientId: string): Promise<Device[]>;
   createDevice(device: InsertDevice & { userId: string }): Promise<Device>;
   updateDevice(id: string, data: Partial<InsertDevice>): Promise<Device | undefined>;
 
-  // Orders
   getOrdersWithDetails(userId: string): Promise<RepairOrderWithDetails[]>;
   getOrderWithDetails(id: string): Promise<RepairOrderWithDetails | undefined>;
   createOrder(order: InsertRepairOrder & { userId: string }): Promise<RepairOrder>;
   updateOrder(id: string, data: Partial<InsertRepairOrder>): Promise<RepairOrder | undefined>;
 
-  // Payments
   getPaymentsWithOrders(userId: string): Promise<(Payment & { order?: RepairOrder })[]>;
   createPayment(payment: InsertPayment & { userId: string, items: PaymentItem[] }): Promise<Payment>;
 
-  // Products
   getProducts(userId: string): Promise<Product[]>;
   createProduct(product: InsertProduct & { userId: string }): Promise<Product>;
   updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(id: string, userId: string): Promise<void>;
 
-  // Expenses
   getExpenses(userId: string): Promise<Expense[]>;
   createExpense(expense: InsertExpense & { userId: string }): Promise<Expense>;
 
-  // Stats
   getStats(userId: string): Promise<any>;
 
-  // Settings
   getSettings(userId: string): Promise<Settings | undefined>;
   updateSettings(userId: string, settings: InsertSettings): Promise<Settings>;
 }
 
 export class SupabaseStorage implements IStorage {
-  // Helper to map Client snake_case -> camelCase
   private mapClient(row: any): Client {
     return {
       id: row.id,
@@ -316,7 +301,6 @@ export class SupabaseStorage implements IStorage {
     };
   }
 
-  // Helper map Device
   private mapDevice(row: any): Device {
     return {
       id: row.id,
@@ -333,7 +317,6 @@ export class SupabaseStorage implements IStorage {
     };
   }
 
-  // Helper map Order
   private mapOrder(row: any): RepairOrder {
     return {
       id: row.id,
@@ -357,7 +340,6 @@ export class SupabaseStorage implements IStorage {
     };
   }
 
-  // Helper map Payment
   private mapPayment(row: any): Payment {
     return {
       id: row.id,
@@ -371,7 +353,7 @@ export class SupabaseStorage implements IStorage {
     };
   }
 
-  // Helper map Settings
+  // --- MAP SETTINGS ACTUALIZADO ---
   private mapSettings(row: any): Settings {
     return {
       id: row.id,
@@ -384,19 +366,19 @@ export class SupabaseStorage implements IStorage {
       landline: row.landline,
       logoUrl: row.logo_url,
       cardSurcharge: parseFloat(row.card_surcharge || "0"),
-      transferSurcharge: parseFloat(row.transfer_surcharge || "0"), // <--- AGREGADO AQUÍ PARA LEER
+      transferSurcharge: parseFloat(row.transfer_surcharge || "0"),
       receiptDisclaimer: row.receipt_disclaimer,
+      ticketFooter: row.ticket_footer,
+      checklistOptions: row.checklist_options || [],
+      printFormat: row.print_format || "a4", // <--- LEER CAMPO
       updatedAt: row.updated_at ? new Date(row.updated_at) : null
     };
   }
 
-  // --- FUNCIÓN CLAVE QUE FALTABA: ENRICH ORDER ---
-  // Busca el cliente, dispositivo y PAGOS para mostrar totales
   private async enrichOrder(order: RepairOrder): Promise<RepairOrderWithDetails> {
     const client = await this.getClient(order.clientId);
     const device = await this.getDevice(order.deviceId);
 
-    // Buscar pagos
     const { data: paymentsData } = await supabase
       .from("payments")
       .select("*")
@@ -508,7 +490,6 @@ export class SupabaseStorage implements IStorage {
     return res ? this.mapDevice(res) : undefined;
   }
 
-  // --- GET ORDERS (Actualizado para usar enrichOrder) ---
   async getOrdersWithDetails(userId: string): Promise<RepairOrderWithDetails[]> {
     const { data } = await supabase
       .from("repair_orders")
@@ -517,8 +498,6 @@ export class SupabaseStorage implements IStorage {
       .order("created_at", { ascending: false });
 
     if (!data) return [];
-
-    // Mapeamos y enriquecemos cada orden para tener los pagos
     return Promise.all(data.map(row => this.enrichOrder(this.mapOrder(row))));
   }
 
@@ -530,8 +509,6 @@ export class SupabaseStorage implements IStorage {
       .single();
 
     if (!data) return undefined;
-
-    // Usamos enrichOrder para asegurar que vengan los pagos
     return this.enrichOrder(this.mapOrder(data));
   }
 
@@ -546,7 +523,6 @@ export class SupabaseStorage implements IStorage {
       diagnosis: order.diagnosis,
       solution: order.solution,
       technician_name: order.technicianName,
-      // CONVERSIÓN A STRING BLINDADA
       estimated_cost: String(order.estimatedCost || 0),
       final_cost: String(order.finalCost || 0),
       estimated_date: order.estimatedDate,
@@ -565,14 +541,12 @@ export class SupabaseStorage implements IStorage {
     if (order.solution) payload.solution = order.solution;
     if (order.technicianName) payload.technician_name = order.technicianName;
     if (order.problem) payload.problem = order.problem;
-
-    // CONVERSIÓN A STRING BLINDADA
     if (order.finalCost !== undefined) payload.final_cost = String(order.finalCost);
     if (order.estimatedCost !== undefined) payload.estimated_cost = String(order.estimatedCost);
-
     if (order.completedAt) payload.completed_at = order.completedAt;
     if (order.deliveredAt) payload.delivered_at = order.deliveredAt;
     if (order.notes) payload.notes = order.notes;
+    if (order.intakeChecklist) payload.intake_checklist = order.intakeChecklist;
 
     const { data, error } = await supabase.from("repair_orders").update(payload).eq("id", id).select().single();
     if (error) return undefined;
@@ -600,7 +574,6 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createPayment(payment: InsertPayment & { userId: string, items: PaymentItem[] }): Promise<Payment> {
-    // 1. Lógica de Descuento de Stock (Igual que antes)
     if (payment.items && payment.items.length > 0) {
       for (const item of payment.items) {
         if (item.type === 'product' && item.id) {
@@ -613,21 +586,17 @@ export class SupabaseStorage implements IStorage {
       }
     }
 
-    // 2. NUEVA LÓGICA: Auto-detectar la Orden dentro del Carrito
-    // Si no viene un orderId explícito, miramos si hay una reparación en los items.
     let targetOrderId = payment.orderId || null;
-
-    // Si todavía es null, buscamos dentro del carrito
     if (!targetOrderId && payment.items && payment.items.length > 0) {
       const repairItem = payment.items.find((item: any) => item.type === 'repair' && item.id) as any;
       if (repairItem) {
-        targetOrderId = repairItem.id!; // ¡Bingo! Encontramos la orden
+        targetOrderId = repairItem.id!;
       }
     }
 
     const payload = {
       user_id: payment.userId,
-      order_id: targetOrderId, // Usamos el ID que encontramos (o null si era venta solo de productos)
+      order_id: targetOrderId,
       amount: payment.amount.toString(),
       method: payment.method,
       notes: payment.notes,
@@ -781,6 +750,7 @@ export class SupabaseStorage implements IStorage {
     return this.mapSettings(data);
   }
 
+  // --- UPDATE SETTINGS ACTUALIZADO ---
   async updateSettings(userId: string, settings: InsertSettings): Promise<Settings> {
     const existing = await this.getSettings(userId);
 
@@ -794,8 +764,11 @@ export class SupabaseStorage implements IStorage {
       landline: settings.landline,
       logo_url: settings.logoUrl,
       card_surcharge: settings.cardSurcharge.toString(),
-      transfer_surcharge: settings.transferSurcharge.toString(), // <--- AGREGADO AQUÍ PARA GUARDAR
+      transfer_surcharge: settings.transferSurcharge.toString(),
       receipt_disclaimer: settings.receiptDisclaimer,
+      ticket_footer: settings.ticketFooter,
+      checklist_options: settings.checklistOptions,
+      print_format: settings.printFormat, // <--- GUARDADO DEL CAMPO
       updated_at: new Date()
     };
 
