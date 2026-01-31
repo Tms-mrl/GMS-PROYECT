@@ -19,7 +19,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { PatternLock } from "@/components/ui/pattern-lock";
-import type { Device } from "@shared/schema"; // <--- SE QUITÓ LockType DE AQUÍ
+import type { Device } from "@shared/schema";
 import { OrderFormValues, NewDeviceValues } from "./schemas";
 
 // Definimos el tipo localmente para corregir el error
@@ -227,31 +227,18 @@ export function DeviceSelection({
                             {lockType === "PATRON" && (
                                 <div>
                                     <Label>Patrón de Desbloqueo *</Label>
-                                    <div className="flex justify-center py-2 bg-background rounded border">
+                                    {/* AJUSTE: w-[250px] para tamaño medio y p-3 para un aire correcto */}
+                                    <div className="flex justify-center items-center p-3 bg-background rounded border w-[250px] mx-auto">
                                         <PatternLock
                                             value={deviceForm.watch("lockValue") || ""}
                                             onChange={(pattern) => {
                                                 deviceForm.setValue("lockValue", pattern);
                                                 if (pattern) {
-                                                    try {
-                                                        const points = JSON.parse(pattern);
-                                                        if (Array.isArray(points) && points.length < 4) {
-                                                            deviceForm.setError("lockValue", { type: "manual", message: "Mínimo 4 puntos" });
-                                                        } else {
-                                                            deviceForm.clearErrors("lockValue");
-                                                        }
-                                                    } catch {
-                                                        deviceForm.setError("lockValue", { type: "manual", message: "Inválido" });
-                                                    }
+                                                    deviceForm.clearErrors("lockValue");
                                                 }
                                             }}
                                         />
                                     </div>
-                                    {deviceForm.formState.errors.lockValue && (
-                                        <p className="text-sm text-destructive mt-1 text-center">
-                                            {deviceForm.formState.errors.lockValue.message}
-                                        </p>
-                                    )}
                                 </div>
                             )}
                         </div>

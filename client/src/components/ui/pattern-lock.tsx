@@ -15,15 +15,9 @@ interface Point {
 }
 
 const POINTS: Point[] = [
-  { row: 0, col: 0 },
-  { row: 0, col: 1 },
-  { row: 0, col: 2 },
-  { row: 1, col: 0 },
-  { row: 1, col: 1 },
-  { row: 1, col: 2 },
-  { row: 2, col: 0 },
-  { row: 2, col: 1 },
-  { row: 2, col: 2 },
+  { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
+  { row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 },
+  { row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 },
 ];
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
@@ -32,7 +26,6 @@ export function PatternLock({ value, onChange, className, readOnly = false }: Pa
   const [selectedPoints, setSelectedPoints] = React.useState<number[]>([]);
   const [isDrawing, setIsDrawing] = React.useState(false);
   const [cursor, setCursor] = React.useState<{ x: number; y: number } | null>(null);
-
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -41,10 +34,7 @@ export function PatternLock({ value, onChange, className, readOnly = false }: Pa
         const parsed = JSON.parse(value);
         if (Array.isArray(parsed)) setSelectedPoints(parsed);
       } catch {
-        const points = value
-          .split(",")
-          .map(Number)
-          .filter((n) => !isNaN(n) && n >= 0 && n < 9);
+        const points = value.split(",").map(Number).filter((n) => !isNaN(n) && n >= 0 && n < 9);
         setSelectedPoints(points);
       }
     } else {
@@ -54,64 +44,44 @@ export function PatternLock({ value, onChange, className, readOnly = false }: Pa
 
   const indexToPoint = (index: number): Point => POINTS[index];
 
-  // ✅ Centros correctos (16.66%, 50%, 83.33%)
   const getPointPosition = (index: number) => {
     const p = indexToPoint(index);
-    const step = 100 / 3; // 33.333...
-    const center = step / 2; // 16.666...
-    return {
-      top: `${p.row * step + center}%`,
-      left: `${p.col * step + center}%`,
-    };
+    const step = 100 / 3;
+    const center = step / 2;
+    return { top: `${p.row * step + center}%`, left: `${p.col * step + center}%` };
   };
 
-  // Centros en sistema SVG viewBox 0..100
   const getPointCenterSvg = (index: number) => {
     const p = indexToPoint(index);
     const step = 100 / 3;
     const center = step / 2;
-    return {
-      x: p.col * step + center,
-      y: p.row * step + center,
-    };
+    return { x: p.col * step + center, y: p.row * step + center };
   };
 
-  // Auto-incluir punto intermedio si “saltás” 2 (Android-like)
   const getIntermediateIfAny = (a: number, b: number): number | null => {
     const pa = indexToPoint(a);
     const pb = indexToPoint(b);
-
     const dr = pb.row - pa.row;
     const dc = pb.col - pa.col;
-
-    // salto de 2 en fila
     if (dr === 0 && Math.abs(dc) === 2) return pa.row * 3 + (pa.col + dc / 2);
-    // salto de 2 en columna
     if (dc === 0 && Math.abs(dr) === 2) return (pa.row + dr / 2) * 3 + pa.col;
-    // salto diagonal 2x2
     if (Math.abs(dr) === 2 && Math.abs(dc) === 2) return (pa.row + dr / 2) * 3 + (pa.col + dc / 2);
-
     return null;
   };
 
   const commitPoints = (points: number[]) => {
     setSelectedPoints(points);
-    if (onChange) {
-      onChange(points.length ? JSON.stringify(points) : "");
-    }
+    if (onChange) onChange(points.length ? JSON.stringify(points) : "");
   };
 
   const addPoint = (next: number) => {
     if (selectedPoints.includes(next)) return;
-
     const last = selectedPoints[selectedPoints.length - 1];
     let updated = [...selectedPoints];
-
     if (typeof last === "number") {
       const mid = getIntermediateIfAny(last, next);
       if (mid !== null && !updated.includes(mid)) updated.push(mid);
     }
-
     updated.push(next);
     commitPoints(updated);
   };
@@ -123,60 +93,40 @@ export function PatternLock({ value, onChange, className, readOnly = false }: Pa
     return { x, y, rect };
   };
 
-  // ✅ Detectar punto por distancia (hitbox), no por “celda”
   const findNearestPoint = (clientX: number, clientY: number) => {
     if (!containerRef.current) return null;
-
     const { x, y, rect } = getLocalXY(clientX, clientY);
-
-    // Convertimos la posición del cursor a % (0..100) para comparar con centros
     const px = (x / rect.width) * 100;
     const py = (y / rect.height) * 100;
-
-    // Radio de “toque” (en % del tamaño). Ajustable.
-    const hitRadius = 9; // ~9% funciona bien con puntos de 32px en 280px aprox.
-
+    const hitRadius = 12;
     let best: { idx: number; d2: number } | null = null;
-
     for (let i = 0; i < 9; i++) {
       const c = getPointCenterSvg(i);
       const dx = px - c.x;
       const dy = py - c.y;
       const d2 = dx * dx + dy * dy;
-
       if (d2 <= hitRadius * hitRadius) {
         if (!best || d2 < best.d2) best = { idx: i, d2 };
       }
     }
-
     return best?.idx ?? null;
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (readOnly || !containerRef.current) return;
     containerRef.current.setPointerCapture(e.pointerId);
-
     setIsDrawing(true);
-
     const nearest = findNearestPoint(e.clientX, e.clientY);
-    if (nearest !== null) {
-      // empezar desde el primer punto tocado
-      commitPoints([nearest]);
-    } else {
-      // si no tocó un punto, arrancamos igual para dibujar "en vivo"
-      commitPoints([]);
-    }
-
+    if (nearest !== null) commitPoints([nearest]);
+    else commitPoints([]);
     const { x, y, rect } = getLocalXY(e.clientX, e.clientY);
     setCursor({ x: (x / rect.width) * 100, y: (y / rect.height) * 100 });
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (readOnly || !isDrawing || !containerRef.current) return;
-
     const { x, y, rect } = getLocalXY(e.clientX, e.clientY);
     setCursor({ x: (x / rect.width) * 100, y: (y / rect.height) * 100 });
-
     const nearest = findNearestPoint(e.clientX, e.clientY);
     if (nearest !== null) addPoint(nearest);
   };
@@ -194,17 +144,15 @@ export function PatternLock({ value, onChange, className, readOnly = false }: Pa
   };
 
   const isSelected = (idx: number) => selectedPoints.includes(idx);
-
   const lastSelected = selectedPoints.length ? selectedPoints[selectedPoints.length - 1] : null;
 
   return (
-    <div className={cn("space-y-3", className)}>
-      {/* ✅ wrapper centrado */}
-      <div className="flex justify-center">
+    <div className={cn("space-y-3 w-full", className)}>
+      <div className="flex justify-center w-full">
         <div
           ref={containerRef}
           className={cn(
-            "relative aspect-square w-full max-w-[280px] rounded-lg border-2 border-input bg-background select-none touch-none",
+            "relative aspect-square w-full max-w-[250px] rounded bg-transparent select-none touch-none",
             readOnly ? "cursor-default" : "cursor-pointer"
           )}
           onPointerDown={handlePointerDown}
@@ -213,66 +161,40 @@ export function PatternLock({ value, onChange, className, readOnly = false }: Pa
           onPointerCancel={handlePointerUp}
           onPointerLeave={handlePointerUp}
         >
-          {/* Líneas */}
+          {/* Líneas (Grosor mantenido en 4) */}
           <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox="0 0 100 100">
             {selectedPoints.map((idx, i) => {
               if (i === 0) return null;
               const a = getPointCenterSvg(selectedPoints[i - 1]);
               const b = getPointCenterSvg(idx);
-              return (
-                <line
-                  key={`line-${i}`}
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  stroke="hsl(var(--primary))"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-              );
+              return <line key={`line-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="hsl(var(--primary))" strokeWidth="4" strokeLinecap="round" />;
             })}
-
-            {/* Línea “en vivo” al cursor (para diagonales fluidas) */}
             {isDrawing && cursor && lastSelected !== null && (
-              (() => {
-                const a = getPointCenterSvg(lastSelected);
-                return (
-                  <line
-                    x1={a.x}
-                    y1={a.y}
-                    x2={cursor.x}
-                    y2={cursor.y}
-                    stroke="hsl(var(--primary))"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    opacity="0.8"
-                  />
-                );
-              })()
+              <line x1={getPointCenterSvg(lastSelected).x} y1={getPointCenterSvg(lastSelected).y} x2={cursor.x} y2={cursor.y} stroke="hsl(var(--primary))" strokeWidth="4" strokeLinecap="round" opacity="0.6" />
             )}
           </svg>
 
-          {/* Puntos */}
+          {/* Puntos (Tamaños aumentados) */}
           {POINTS.map((_, index) => {
             const pos = getPointPosition(index);
+            const active = isSelected(index);
             const isStartNode = selectedPoints.length > 0 && selectedPoints[0] === index;
 
             return (
               <div
                 key={index}
                 className={cn(
-                  "absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 transition-colors",
-                  isSelected(index)
+                  "absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 transition-all duration-200",
+                  active
                     ? isStartNode
-                      ? "bg-green-500 border-green-500" // Start node highlight
-                      : "bg-primary border-primary"
-                    : "bg-background border-input hover:border-primary/50"
+                      ? "h-7 w-7 bg-green-500 border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]" // Aumentado a h-7 w-7 (28px)
+                      : "h-7 w-7 bg-primary border-primary shadow-[0_0_10px_rgba(59,130,246,0.5)]" // Aumentado a h-7 w-7 (28px)
+                    : "h-6 w-6 bg-transparent border-muted-foreground/30" // Aumentado a h-6 w-6 (24px)
                 )}
                 style={{ top: pos.top, left: pos.left }}
               >
-                {isSelected(index) && (
-                  <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
+                {active && (
+                  <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" /> // Aumentado ligeramente el punto interno
                 )}
               </div>
             );
@@ -281,17 +203,17 @@ export function PatternLock({ value, onChange, className, readOnly = false }: Pa
       </div>
 
       {!readOnly && (
-        <Button type="button" variant="outline" size="sm" onClick={handleClear} className="w-full">
-          Limpiar
-        </Button>
-      )}
-
-      {selectedPoints.length > 0 && (
-        <p className="text-xs text-center text-muted-foreground">
-          Patrón con {selectedPoints.length} punto{selectedPoints.length !== 1 ? "s" : ""}
-        </p>
+        <div className="space-y-1">
+          <Button type="button" variant="ghost" size="sm" onClick={handleClear} className="w-full h-8 text-xs text-muted-foreground hover:text-foreground">
+            Limpiar
+          </Button>
+          <div className="h-4 flex items-center justify-center">
+            <p className={cn("text-[10px] text-center text-muted-foreground transition-opacity duration-300", selectedPoints.length > 0 ? "opacity-100" : "opacity-0")}>
+              Patrón de {selectedPoints.length} punto{selectedPoints.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
 }
-

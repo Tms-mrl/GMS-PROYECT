@@ -11,7 +11,9 @@ import {
   Printer,
   ChevronRight,
   Plus,
-  MessageCircle
+  MessageCircle,
+  Lock,
+  Unlock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,8 +81,8 @@ export default function OrderDetail() {
 
   // --- LÓGICA WHATSAPP ---
   const openWhatsApp = (e: React.MouseEvent, phone: string | null | undefined) => {
-    e.preventDefault(); // Evita navegar al perfil del cliente
-    e.stopPropagation(); // Evita bubbling
+    e.preventDefault();
+    e.stopPropagation();
 
     if (!phone) return;
     const cleanPhone = phone.replace(/\D/g, '');
@@ -119,7 +121,6 @@ export default function OrderDetail() {
   const currentData = { ...order, ...formData };
 
   // Calculate finances
-  // LÓGICA CLAVE: Aquí ya estamos filtrando los recargos correctamente
   const totalPaid = order.payments?.reduce((sum, p) => {
     if (p.items && p.items.length > 0) {
       const repairPayment = p.items
@@ -135,8 +136,6 @@ export default function OrderDetail() {
 
   const totalCost = final > 0 ? final : estimated;
   const isCostDefined = totalCost > 0;
-
-  // Este 'balance' es el valor CORRECTO ($15.000)
   const balance = Math.max(0, totalCost - totalPaid);
 
   const handleSave = () => {
@@ -149,9 +148,7 @@ export default function OrderDetail() {
         open={isPaymentDialogOpen}
         onOpenChange={setIsPaymentDialogOpen}
         defaultOrderId={orderId}
-        // --- CAMBIO AQUÍ: Pasamos el balance correcto al diálogo ---
         defaultAmount={balance}
-        // ---------------------------------------------------------
         onPaymentSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["/api/orders", orderId] });
           queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
@@ -342,7 +339,6 @@ export default function OrderDetail() {
                 <div className="pt-4 border-t">
                   <Label className="mb-2 block">Historial de Pagos</Label>
                   <div className="space-y-2">
-                    {/* Historial de Pagos */}
                     <div className="space-y-2">
                       {order.payments.map((payment: Payment) => (
                         <div key={payment.id} className="flex flex-col space-y-1 text-sm py-2 px-3 bg-muted rounded-md">
@@ -381,7 +377,7 @@ export default function OrderDetail() {
         </div>
 
         <div className="space-y-6">
-          {/* TARJETA DE CLIENTE CON BOTÓN DE WHATSAPP */}
+          {/* TARJETA DE CLIENTE */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -394,7 +390,6 @@ export default function OrderDetail() {
                 <div className="hover-elevate rounded-md p-3 -m-3 cursor-pointer flex items-center justify-between" data-testid="link-client">
                   <div>
                     <p className="font-medium">{order.client.name}</p>
-                    {/* Fila del teléfono + Botón WhatsApp */}
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-sm text-muted-foreground">{order.client.phone}</p>
                       {order.client.phone && (
@@ -418,6 +413,7 @@ export default function OrderDetail() {
             </CardContent>
           </Card>
 
+          {/* TARJETA DE DISPOSITIVO (REDISEÑADA) */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -425,68 +421,91 @@ export default function OrderDetail() {
                 Dispositivo
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground">Marca / Modelo</p>
-                <p className="font-medium">{order.device.brand} {order.device.model}</p>
+                <p className="font-medium text-base">{order.device.brand} {order.device.model}</p>
               </div>
-              {order.device.imei && (
-                <div>
-                  <p className="text-sm text-muted-foreground">IMEI</p>
-                  <p className="font-mono text-sm">{order.device.imei}</p>
-                </div>
-              )}
-              {order.device.serialNumber && (
-                <div>
-                  <p className="text-sm text-muted-foreground">N° de Serie</p>
-                  <p className="font-mono text-sm">{order.device.serialNumber}</p>
-                </div>
-              )}
-              {order.device.color && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Color</p>
-                  <p>{order.device.color}</p>
-                </div>
-              )}
-              {order.device.condition && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Condición</p>
-                  <p>{order.device.condition}</p>
-                </div>
-              )}
-              {order.device.lockType && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Tipo de Bloqueo</p>
-                  <div className="font-medium">
-                    {order.device.lockType === "PIN" && (
-                      <div className="flex flex-col">
-                        <span>PIN</span>
-                        <span className="text-lg mt-1">PIN: {order.device.lockValue || "No definido"}</span>
-                      </div>
-                    )}
-                    {order.device.lockType === "PASSWORD" && (
-                      <div className="flex flex-col">
-                        <span>Contraseña</span>
-                        <span className="text-base mt-1 break-all">Contraseña: {order.device.lockValue || "No definida"}</span>
-                      </div>
-                    )}
-                    {order.device.lockType === "PATRON" && "Patrón"}
-                  </div>
-                </div>
-              )}
-              {order.device.lockType === "PATRON" && (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Patrón de Desbloqueo</p>
-                  {order.device.lockValue ? (
-                    <PatternLock
-                      value={order.device.lockValue}
-                      readOnly={true}
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground italic">No pattern saved</p>
+
+              {(order.device.imei || order.device.serialNumber) && (
+                <div className="grid grid-cols-2 gap-2">
+                  {order.device.imei && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">IMEI</p>
+                      <p className="font-mono text-sm">{order.device.imei}</p>
+                    </div>
+                  )}
+                  {order.device.serialNumber && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">N° Serie</p>
+                      <p className="font-mono text-sm">{order.device.serialNumber}</p>
+                    </div>
                   )}
                 </div>
               )}
+
+              {(order.device.color || order.device.condition) && (
+                <div className="grid grid-cols-2 gap-2">
+                  {order.device.color && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Color</p>
+                      <p>{order.device.color}</p>
+                    </div>
+                  )}
+                  {order.device.condition && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Condición</p>
+                      <p>{order.device.condition}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SECCIÓN DE BLOQUEO UNIFICADA */}
+              <div className="pt-2 border-t mt-2">
+                <div className="flex items-center gap-2 mb-2">
+                  {(!order.device.lockType || order.device.lockType === "NONE") ? (
+                    <Unlock className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Lock className="h-4 w-4 text-amber-500" />
+                  )}
+                  <span className="font-medium text-sm">Bloqueo de Pantalla</span>
+                </div>
+
+                {(!order.device.lockType || order.device.lockType === "NONE") ? (
+                  <p className="text-sm text-muted-foreground pl-6">Sin bloqueo</p>
+                ) : (
+                  <div className="pl-6 space-y-2">
+                    {/* PIN o CONTRASEÑA */}
+                    {(order.device.lockType === "PIN" || order.device.lockType === "PASSWORD") && (
+                      <div>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold">
+                          {order.device.lockType === "PIN" ? "PIN" : "Contraseña"}
+                        </span>
+                        <div className="text-lg font-mono bg-muted/30 p-2 rounded border border-dashed mt-1 select-all">
+                          {order.device.lockValue || "No definido"}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PATRÓN */}
+                    {order.device.lockType === "PATRON" && (
+                      <div>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold block mb-2">
+                          Patrón
+                        </span>
+                        {/* Contenedor del patrón ajustado y centrado */}
+                        <div className="flex justify-center items-center p-3 bg-muted/20 rounded-md border border-dashed border-muted-foreground/30 w-[200px]">
+                          <PatternLock
+                            value={order.device.lockValue || ""}
+                            readOnly={true}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 

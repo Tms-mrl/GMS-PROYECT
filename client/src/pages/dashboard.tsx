@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   ClipboardList,
@@ -13,40 +12,13 @@ import {
   MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { InsertExpense, RepairOrderWithDetails, Payment } from "@shared/schema";
+import type { RepairOrderWithDetails, Payment } from "@shared/schema";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 export default function Dashboard() {
-  const { toast } = useToast();
-  const [isExpenseOpen, setIsExpenseOpen] = useState(false);
-
-  // Form State
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("Insumos");
-
   const { data: stats, isLoading: statsLoading } = useQuery<{
     activeOrders: number;
     pendingDiagnosis: number;
@@ -95,42 +67,6 @@ export default function Dashboard() {
     window.open(`https://wa.me/${cleanPhone}`, '_blank');
   };
 
-  const createExpenseMutation = useMutation({
-    mutationFn: async (newExpense: InsertExpense) => {
-      const res = await apiRequest("POST", "/api/expenses", newExpense);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
-      toast({ title: "Gasto registrado correctamente" });
-      setIsExpenseOpen(false);
-      setAmount("");
-      setDescription("");
-      setCategory("Insumos");
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error al registrar gasto",
-        description: error.message,
-        variant: "destructive"
-      });
-    },
-  });
-
-  const handleCreateExpense = () => {
-    if (!amount || !description || !category) {
-      toast({ title: "Complete todos los campos", variant: "destructive" });
-      return;
-    }
-
-    createExpenseMutation.mutate({
-      amount: parseFloat(amount),
-      description,
-      category,
-      date: new Date()
-    });
-  };
-
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat("es-AR", {
       style: "currency",
@@ -148,64 +84,6 @@ export default function Dashboard() {
           <p className="text-muted-foreground">Resumen financiero y operativo</p>
         </div>
         <div className="flex gap-3">
-          <Dialog open={isExpenseOpen} onOpenChange={setIsExpenseOpen}>
-            <DialogTrigger asChild>
-              <Button variant="destructive">
-                <TrendingDown className="h-4 w-4 mr-2" />
-                Registrar Gasto
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Registrar Nuevo Gasto</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Monto</Label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="number"
-                      className="pl-8"
-                      placeholder="0.00"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Categoría</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Insumos">Insumos (Repuestos)</SelectItem>
-                      <SelectItem value="Servicios">Servicios (Luz, Internet)</SelectItem>
-                      <SelectItem value="Alquiler">Alquiler</SelectItem>
-                      <SelectItem value="Comida">Comida / Viáticos</SelectItem>
-                      <SelectItem value="Sueldos">Sueldos</SelectItem>
-                      <SelectItem value="Otros">Otros</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Descripción</Label>
-                  <Input
-                    placeholder="Detalle del gasto..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={handleCreateExpense} disabled={createExpenseMutation.isPending}>
-                  {createExpenseMutation.isPending ? "Guardando..." : "Guardar Gasto"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
           <Button asChild>
             <Link href="/ordenes/nueva">
               <Plus className="h-4 w-4 mr-2" />
@@ -228,7 +106,7 @@ export default function Dashboard() {
           ))
         ) : (
           <>
-            {/* CAJA (AZUL - BRILLO RESTAURADO) */}
+            {/* CAJA (AZUL) */}
             <Card className="bg-gradient-to-br from-blue-50 to-white dark:from-blue-950 dark:to-background border-blue-200 dark:border-blue-800">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
@@ -241,7 +119,7 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* INGRESOS (VERDE - BRILLO RESTAURADO) */}
+            {/* INGRESOS (VERDE) */}
             <Card className="bg-gradient-to-br from-green-50 to-white dark:from-green-950 dark:to-background border-green-200 dark:border-green-800">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
@@ -254,7 +132,7 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* GASTOS (ROJO - BRILLO RESTAURADO) */}
+            {/* GASTOS (ROJO) */}
             <Card className="bg-gradient-to-br from-red-50 to-white dark:from-red-950 dark:to-background border-red-200 dark:border-red-800">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
@@ -267,14 +145,13 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* BALANCE NETO (BLANCO/PLATA - NUMEROS BLANCOS) */}
+            {/* BALANCE NETO (BLANCO/PLATA) */}
             <Card className="bg-gradient-to-br from-gray-50 to-white dark:from-zinc-800 dark:to-black border-gray-200 dark:border-zinc-700">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Balance Neto (Hoy)</p>
                   <DollarSign className="h-4 w-4 text-gray-500 dark:text-white" />
                 </div>
-                {/* Aquí eliminamos el verde/rojo y ponemos texto blanco/negro según el tema */}
                 <div className="text-2xl font-bold text-gray-900 dark:text-white">
                   {formatMoney(stats?.netBalance ?? 0)}
                 </div>
@@ -314,7 +191,6 @@ export default function Dashboard() {
                         <p className="text-xs text-gray-400 font-medium truncate">
                           {order.client.name}
                         </p>
-                        {/* Botón WhatsApp */}
                         {order.client.phone && (
                           <div
                             role="button"
@@ -337,7 +213,6 @@ export default function Dashboard() {
                         {format(new Date(order.createdAt), "dd/MM", { locale: es })}
                       </span>
 
-                      {/* Payment Badge */}
                       {payStatus === 'paid' && (
                         <span className="text-green-400 font-bold flex items-center gap-1">
                           Pagado <CheckCircle2 className="w-3 h-3" />
